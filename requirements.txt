@@ -1,0 +1,13 @@
+# Core scientific stack
+numpy>=1.24.0
+pandas>=1.5.0
+matplotlib>=3.6.0
+
+# Network / graph
+networkx>=2.8.0
+
+# Optimal control solver (ODE)
+casadi>=3.5.5
+
+# Reinforcement learning
+torch>=2.0.0
