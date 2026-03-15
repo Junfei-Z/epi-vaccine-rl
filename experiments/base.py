@@ -335,5 +335,130 @@ def main(out_dir: str = 'results'):
     return df
 
 
+# ---------------------------------------------------------------------------
+# Multi-seed evaluation
+# ---------------------------------------------------------------------------
+
+def run_multiseed(
+    n_seeds: int = 5,
+    seeds: list = None,
+    out_dir: str = 'results/multiseed',
+) -> pd.DataFrame:
+    """
+    Run HCP and HRP across multiple random seeds and report mean ± std.
+
+    Each seed generates a different BA network and initial infection pattern,
+    giving a statistically meaningful comparison between the three methods.
+
+    Parameters
+    ----------
+    n_seeds : number of seeds to run (ignored if `seeds` is given)
+    seeds   : explicit list of integer seeds; defaults to [42,123,456,789,999]
+    out_dir : root output directory; each seed gets its own sub-folder
+
+    Returns
+    -------
+    DataFrame with columns:
+        Scenario, Method, Mean_Deaths, Std_Deaths, Seeds
+    and one row per (scenario, method) combination.
+    Also saves per-seed raw results to out_dir/multiseed_raw.csv
+    and summary to out_dir/multiseed_summary.csv.
+    """
+    import copy
+
+    if seeds is None:
+        seeds = [42, 123, 456, 789, 999][:n_seeds]
+
+    os.makedirs(out_dir, exist_ok=True)
+    raw_rows = []
+
+    for seed in seeds:
+        print(f"\n{'='*60}")
+        print(f"[multiseed] SEED = {seed}")
+        print(f"{'='*60}")
+
+        seed_dir = os.path.join(out_dir, f'seed{seed}')
+
+        # HCP
+        params_hcp = copy.deepcopy(PARAMS_HCP)
+        params_hcp['SEED'] = seed
+        res_hcp = run_one_scenario(
+            params=params_hcp,
+            scenario_tag='hcp',
+            priority='Z',
+            priority_order=[3, 2, 1],
+            bias=[0, 0, 1],
+            out_dir=os.path.join(seed_dir, 'hcp'),
+            warm_max_episodes=500,
+            warm_episodes_per_update=10,
+            warm_mean_episodes=30,
+            warm_window_size=50,
+            warm_rel_std_thresh=0.03,
+            warm_patience=10,
+            warm_min_episodes=100,
+        )
+        raw_rows.append({'Seed': seed, 'Scenario': 'HCP',
+                         'Warm_RL': res_hcp['deaths_warm_rl'],
+                         'Cold_RL': res_hcp['deaths_cold_rl'],
+                         'OC_Guided': res_hcp['deaths_ocg']})
+
+        # HRP
+        params_hrp = copy.deepcopy(PARAMS_HRP)
+        params_hrp['SEED'] = seed
+        res_hrp = run_one_scenario(
+            params=params_hrp,
+            scenario_tag='hrp',
+            priority='Y',
+            priority_order=[2, 3, 1],
+            bias=[0, 1, 0],
+            out_dir=os.path.join(seed_dir, 'hrp'),
+            warm_max_episodes=500,
+            warm_episodes_per_update=10,
+            warm_mean_episodes=30,
+            warm_window_size=50,
+            warm_rel_std_thresh=0.03,
+            warm_patience=10,
+            warm_min_episodes=100,
+        )
+        raw_rows.append({'Seed': seed, 'Scenario': 'HRP',
+                         'Warm_RL': res_hrp['deaths_warm_rl'],
+                         'Cold_RL': res_hrp['deaths_cold_rl'],
+                         'OC_Guided': res_hrp['deaths_ocg']})
+
+    df_raw = pd.DataFrame(raw_rows)
+    df_raw.to_csv(os.path.join(out_dir, 'multiseed_raw.csv'), index=False)
+
+    # summary: mean ± std per (scenario, method)
+    summary_rows = []
+    for scenario in ['HCP', 'HRP']:
+        sub = df_raw[df_raw['Scenario'] == scenario]
+        for method in ['Warm_RL', 'Cold_RL', 'OC_Guided']:
+            vals = sub[method].values
+            summary_rows.append({
+                'Scenario':    scenario,
+                'Method':      method,
+                'Mean_Deaths': round(vals.mean(), 2),
+                'Std_Deaths':  round(vals.std(),  2),
+                'Seeds':       str(seeds),
+            })
+
+    df_summary = pd.DataFrame(summary_rows)
+    df_summary.to_csv(os.path.join(out_dir, 'multiseed_summary.csv'), index=False)
+
+    print("\n" + "="*60)
+    print("MULTI-SEED SUMMARY  (mean ± std)")
+    print("="*60)
+    for scenario in ['HCP', 'HRP']:
+        print(f"\n  {scenario}")
+        sub = df_summary[df_summary['Scenario'] == scenario]
+        for _, row in sub.iterrows():
+            print(f"    {row['Method']:12s}  {row['Mean_Deaths']:.1f} ± {row['Std_Deaths']:.1f}")
+
+    print("\nRaw per-seed results:")
+    print(df_raw.to_string(index=False))
+
+    return df_summary
+
+
 if __name__ == '__main__':
     main()

@@ -86,7 +86,17 @@ print("="*60)
 df_epsilon = run_sensitivity_epsilon(base_out_dir='results/sensitivity_epsilon')
 
 
-# ── Cell 10 (optional): Download all results ─────────────────
+# ── Cell 10: Multi-seed evaluation (statistical validation) ──
+# Runs HCP + HRP across 5 random seeds and reports mean ± std.
+# Takes ~5x longer than a single run — recommended for final results.
+from experiments.base import run_multiseed
+df_multiseed = run_multiseed(
+    seeds=[42, 123, 456, 789, 999],
+    out_dir='results/multiseed',
+)
+
+
+# ── Cell 11 (optional): Download all results ─────────────────
 # Uncomment to zip and download every CSV from the results/ folder
 #
 # import shutil
