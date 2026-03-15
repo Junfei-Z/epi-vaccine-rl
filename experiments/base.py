@@ -292,14 +292,13 @@ def main(out_dir: str = 'results'):
         priority_order=[3, 2, 1],
         bias=[0, 0, 1],
         out_dir=out_dir,
-        # Tuned warm hyperparams — increase these if warm RL underperforms
-        warm_max_episodes=300,
-        warm_episodes_per_update=12,
-        warm_mean_episodes=12,
-        warm_window_size=40,
-        warm_rel_std_thresh=0.05,
-        warm_patience=4,
-        warm_min_episodes=40,
+        warm_max_episodes=500,
+        warm_episodes_per_update=10,
+        warm_mean_episodes=30,
+        warm_window_size=50,
+        warm_rel_std_thresh=0.03,
+        warm_patience=10,
+        warm_min_episodes=100,
     )
 
     results_hrp = run_one_scenario(
@@ -309,13 +308,13 @@ def main(out_dir: str = 'results'):
         priority_order=[2, 3, 1],
         bias=[0, 1, 0],
         out_dir=out_dir,
-        warm_max_episodes=300,
-        warm_episodes_per_update=12,
-        warm_mean_episodes=15,
-        warm_window_size=40,
-        warm_rel_std_thresh=0.05,
-        warm_patience=4,
-        warm_min_episodes=40,
+        warm_max_episodes=500,
+        warm_episodes_per_update=10,
+        warm_mean_episodes=30,
+        warm_window_size=50,
+        warm_rel_std_thresh=0.03,
+        warm_patience=10,
+        warm_min_episodes=100,
     )
 
     # comparison table

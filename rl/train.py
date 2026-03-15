@@ -240,9 +240,9 @@ def run_training(
 
     # warm vs cold hyperparameters
     is_warm      = prior is not None
-    prior_weight = 1.6   if is_warm else 0.3
-    prior_decay  = 0.995 if is_warm else 0.99
-    prior_alpha  = 60.0  if is_warm else 30.0
+    prior_weight = 0.5   if is_warm else 0.3   # reduced: prior guides but doesn't dominate
+    prior_decay  = 0.97  if is_warm else 0.99  # faster decay: RL takes over sooner
+    prior_alpha  = 20.0  if is_warm else 30.0  # softer prior Dirichlet
 
     ppo = PPO(
         state_dim=state_dim, action_dim=3,
@@ -254,7 +254,7 @@ def run_training(
         prior_decay=prior_decay,
         prior_alpha=prior_alpha,
         entropy_coef=0.001, entropy_decay=0.99,
-        sample_temp_warm=2.0, sample_temp_cold=2.5,
+        sample_temp_warm=3.0, sample_temp_cold=1.0,  # fixed: warm=explore, cold=exploit
     )
     buffer = PPOBuffer()
 
