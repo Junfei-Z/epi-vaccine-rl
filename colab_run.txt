@@ -1,9 +1,15 @@
 # ============================================================
 # Colab Runner — epi-vaccine-rl
 # ============================================================
+# Usage:
+#   Cell 1-3: run once to set up the environment (clone, install, path)
+#   Cell 4+:  each sensitivity experiment is its own self-contained cell
+#             — just run the cell(s) you want, no flag-setting needed
+# ============================================================
+
 
 # ── Cell 1: Clone repo ──────────────────────────────────────
-import os
+import os, sys
 
 REPO_URL = "https://github.com/Junfei-Z/epi-vaccine-rl.git"
 REPO_DIR = "epi-vaccine-rl"
@@ -14,6 +20,8 @@ else:
     os.system(f"git -C {REPO_DIR} pull")
 
 os.chdir(REPO_DIR)
+if os.getcwd() not in sys.path:
+    sys.path.insert(0, os.getcwd())
 print("Working directory:", os.getcwd())
 
 
@@ -22,91 +30,71 @@ os.system("pip install -r requirements.txt -q")
 print("Dependencies installed.")
 
 
-# ── Cell 3: Add project root to Python path ─────────────────
-import sys
-if os.getcwd() not in sys.path:
-    sys.path.insert(0, os.getcwd())
-
-
-# ── Cell 4: Choose which experiments to run ─────────────────
-# Set True/False for each experiment you want to run
-
-RUN_BASE             = True   # HCP + HRP baseline
-RUN_DEGREE           = False  # BA_M sweep [2,4,6,8,10]
-RUN_INFECTED         = False  # INITIAL_INFECTED sweep [400,500,600,700]
-RUN_BETA             = False  # beta sweep [0.06,0.08,0.10,0.12,0.15]
-RUN_VMAX             = False  # V_MAX_DAILY sweep [10,20,40,60,80]
-RUN_GROUPSIZE        = False  # N sweep [5000,7000,9000,11000,13000]
-RUN_EPSILON          = False  # epsilon sweep [0.35,0.45,0.55,0.65,0.75]
-
-
-# ── Cell 5: Run selected experiments ────────────────────────
-import pandas as pd
-
-results = {}
-
-if RUN_BASE:
-    from experiments.base import main as run_base
-    print("\n" + "="*60)
-    print("Running BASE experiment (HCP + HRP)")
-    print("="*60)
-    df = run_base(out_dir='results/base')
-    results['base'] = df
-
-if RUN_DEGREE:
-    from experiments.sensitivity_degree import run_sensitivity_degree
-    print("\n" + "="*60)
-    print("Running DEGREE sensitivity (BA_M)")
-    print("="*60)
-    results['degree'] = run_sensitivity_degree()
-
-if RUN_INFECTED:
-    from experiments.sensitivity_infected import run_sensitivity_infected
-    print("\n" + "="*60)
-    print("Running INITIAL_INFECTED sensitivity")
-    print("="*60)
-    results['infected'] = run_sensitivity_infected()
-
-if RUN_BETA:
-    from experiments.sensitivity_beta import run_sensitivity_beta
-    print("\n" + "="*60)
-    print("Running BETA sensitivity")
-    print("="*60)
-    results['beta'] = run_sensitivity_beta()
-
-if RUN_VMAX:
-    from experiments.sensitivity_vmax import run_sensitivity_vmax
-    print("\n" + "="*60)
-    print("Running V_MAX_DAILY sensitivity")
-    print("="*60)
-    results['vmax'] = run_sensitivity_vmax()
-
-if RUN_GROUPSIZE:
-    from experiments.sensitivity_groupsize import run_sensitivity_groupsize
-    print("\n" + "="*60)
-    print("Running GROUP SIZE (N) sensitivity")
-    print("="*60)
-    results['groupsize'] = run_sensitivity_groupsize()
-
-if RUN_EPSILON:
-    from experiments.sensitivity_epsilon import run_sensitivity_epsilon
-    print("\n" + "="*60)
-    print("Running EPSILON (vaccine efficacy) sensitivity")
-    print("="*60)
-    results['epsilon'] = run_sensitivity_epsilon()
-
-
-# ── Cell 6: Print summary of all completed experiments ───────
-print("\n\n" + "="*60)
-print("ALL DONE — Summary")
+# ── Cell 3: BASE experiment — HCP + HRP ─────────────────────
+from experiments.base import main as run_base
+print("\n" + "="*60)
+print("Running BASE experiment (HCP + HRP)")
 print("="*60)
-for name, df in results.items():
-    print(f"\n── {name.upper()} ──")
-    print(df.to_string(index=False))
+df_base = run_base(out_dir='results/base')
+print(df_base.to_string(index=False))
 
 
-# ── Cell 7 (optional): Download results from Colab ──────────
-# Uncomment to zip and download all CSVs
+# ── Cell 4: Sensitivity — network degree (BA_M) ─────────────
+from experiments.sensitivity_degree import run_sensitivity_degree
+print("\n" + "="*60)
+print("Running DEGREE sensitivity  BA_M ∈ [2,4,6,8,10]")
+print("="*60)
+df_degree = run_sensitivity_degree(base_out_dir='results/sensitivity_degree')
+print(df_degree.to_string(index=False))
+
+
+# ── Cell 5: Sensitivity — initial infected ───────────────────
+from experiments.sensitivity_infected import run_sensitivity_infected
+print("\n" + "="*60)
+print("Running INITIAL_INFECTED sensitivity  [400,500,600,700]")
+print("="*60)
+df_infected = run_sensitivity_infected(base_out_dir='results/sensitivity_infected')
+print(df_infected.to_string(index=False))
+
+
+# ── Cell 6: Sensitivity — transmissibility (beta) ───────────
+from experiments.sensitivity_beta import run_sensitivity_beta
+print("\n" + "="*60)
+print("Running BETA sensitivity  beta ∈ [0.06,0.08,0.10,0.12,0.15]")
+print("="*60)
+df_beta = run_sensitivity_beta(base_out_dir='results/sensitivity_beta')
+print(df_beta.to_string(index=False))
+
+
+# ── Cell 7: Sensitivity — max daily doses (V_MAX_DAILY) ──────
+from experiments.sensitivity_vmax import run_sensitivity_vmax
+print("\n" + "="*60)
+print("Running V_MAX_DAILY sensitivity  [10,20,40,60,80]")
+print("="*60)
+df_vmax = run_sensitivity_vmax(base_out_dir='results/sensitivity_vmax')
+print(df_vmax.to_string(index=False))
+
+
+# ── Cell 8: Sensitivity — population size (N) ───────────────
+from experiments.sensitivity_groupsize import run_sensitivity_groupsize
+print("\n" + "="*60)
+print("Running GROUP SIZE sensitivity  N ∈ [5000,7000,9000,11000,13000]")
+print("="*60)
+df_groupsize = run_sensitivity_groupsize(base_out_dir='results/sensitivity_groupsize')
+print(df_groupsize.to_string(index=False))
+
+
+# ── Cell 9: Sensitivity — vaccine efficacy (epsilon) ─────────
+from experiments.sensitivity_epsilon import run_sensitivity_epsilon
+print("\n" + "="*60)
+print("Running EPSILON sensitivity  ε ∈ [0.35,0.45,0.55,0.65,0.75]")
+print("="*60)
+df_epsilon = run_sensitivity_epsilon(base_out_dir='results/sensitivity_epsilon')
+print(df_epsilon.to_string(index=False))
+
+
+# ── Cell 10 (optional): Download all results ─────────────────
+# Uncomment to zip and download every CSV from the results/ folder
 #
 # import shutil
 # shutil.make_archive('/content/results_export', 'zip', 'results')
