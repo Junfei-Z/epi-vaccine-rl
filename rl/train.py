@@ -238,11 +238,16 @@ def run_training(
     state_dim = int(len(obs))
     prior     = None if prior_path is None else np.load(prior_path)
 
-    # warm vs cold hyperparameters
+    # warm vs cold hyperparameters.
+    # Warm start uses behavioural-cloning initialisation: the first
+    # `warm_mean_episodes` episodes purely imitate the ODE prior (no KL
+    # penalty during PPO updates).  After that, free PPO takes over.
+    # Setting prior_weight=0 removes the KL constraint entirely so the
+    # policy can improve beyond the ODE solution once initialised.
     is_warm      = prior is not None
-    prior_weight = 0.5   if is_warm else 0.3   # reduced: prior guides but doesn't dominate
-    prior_decay  = 0.97  if is_warm else 0.99  # faster decay: RL takes over sooner
-    prior_alpha  = 20.0  if is_warm else 30.0  # softer prior Dirichlet
+    prior_weight = 0.0                          # no KL penalty: BC init + free PPO
+    prior_decay  = 0.99  if is_warm else 0.99
+    prior_alpha  = 20.0  if is_warm else 30.0
 
     ppo = PPO(
         state_dim=state_dim, action_dim=3,
@@ -254,7 +259,7 @@ def run_training(
         prior_decay=prior_decay,
         prior_alpha=prior_alpha,
         entropy_coef=0.001, entropy_decay=0.99,
-        sample_temp_warm=3.0, sample_temp_cold=1.0,  # fixed: warm=explore, cold=exploit
+        sample_temp_warm=3.0, sample_temp_cold=1.0,
     )
     buffer = PPOBuffer()
 
@@ -274,15 +279,19 @@ def run_training(
             s_t = torch.from_numpy(state).float()
 
             # action selection strategy per episode phase
-            if prior is not None and ep == 0:
-                # episode 0: imitate prior exactly (no exploration)
+            if prior is not None and ep < warm_mean_episodes:
+                # Behavioural-cloning phase: imitate ODE prior exactly.
+                # Repeating over warm_mean_episodes episodes gives the policy
+                # a strong initialisation near the ODE solution before free
+                # PPO exploration begins.  No temperature scaling needed here
+                # since we are following the prior deterministically.
                 shares        = prior[env.day]
                 action_tensor = torch.tensor(shares, dtype=torch.float32)
                 action_tensor = torch.clamp(action_tensor, min=1e-6)
                 action_tensor = action_tensor / action_tensor.sum()
                 log_prob      = ppo.policy_old.dist(s_t).log_prob(action_tensor).detach()
-            elif ep < warm_mean_episodes:
-                # warm-up: high temperature → more exploration
+            elif prior is not None and ep < warm_mean_episodes * 2:
+                # exploration phase: high temperature around the now-initialised policy
                 action_tensor, log_prob = ppo.policy.sample_with_temp(
                     s_t, ppo.policy_old, sample_temp=ppo.sample_temp_warm,
                 )
