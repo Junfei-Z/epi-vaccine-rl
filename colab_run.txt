@@ -86,7 +86,16 @@ print("="*60)
 df_epsilon = run_sensitivity_epsilon(base_out_dir='results/sensitivity_epsilon')
 
 
-# ── Cell 10: Multi-seed evaluation (statistical validation) ──
+# ── Cell 10: Infection risk sensitivity (beta + wA) ──────────
+# Part A: beta sweep [0.04, 0.06, 0.08, 0.10, 0.12, 0.15]
+# Part B: wA sweep  [0.1,  0.3,  0.5,  0.7,  0.9 ]
+from experiments.sensitivity_infection_risk import run_sensitivity_infection_risk
+df_beta_risk, df_wA_risk = run_sensitivity_infection_risk(
+    base_out_dir='results/sensitivity_infection_risk',
+)
+
+
+# ── Cell 11: Multi-seed evaluation (statistical validation) ──
 # Runs HCP + HRP across 5 random seeds and reports mean ± std.
 # Takes ~5x longer than a single run — recommended for final results.
 from experiments.base import run_multiseed
