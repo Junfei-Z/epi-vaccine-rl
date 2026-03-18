@@ -38,7 +38,7 @@ import numpy as np
 import pandas as pd
 
 from config import PARAMS_HCP, PARAMS_HRP, to_params_global
-from graph import build_graph_and_groups
+from graph import build_graph_and_groups, build_graph_nlpa
 from ode_solver import solve, allocations_from_solution
 from allocation import strict_priority_window_fill, cap_to_capacity, to_simplex
 from env import make_env_from_graph
@@ -112,10 +112,17 @@ def run_one_scenario(
     # ------------------------------------------------------------------ #
     # 1. Build graph                                                       #
     # ------------------------------------------------------------------ #
-    G, groups, deg_dict = build_graph_and_groups(
-        n=params['N'], m=params['BA_M'], seed=params['SEED'],
-        high_risk_prob=params['HIGH_RISK_PROB'], alpha_std=params['ALPHA_STD'],
-    )
+    if 'ALPHA_PA' in params:
+        G, groups, deg_dict = build_graph_nlpa(
+            n=params['N'], m=params['BA_M'], alpha_pa=params['ALPHA_PA'],
+            seed=params['SEED'], high_risk_prob=params['HIGH_RISK_PROB'],
+            alpha_std=params['ALPHA_STD'],
+        )
+    else:
+        G, groups, deg_dict = build_graph_and_groups(
+            n=params['N'], m=params['BA_M'], seed=params['SEED'],
+            high_risk_prob=params['HIGH_RISK_PROB'], alpha_std=params['ALPHA_STD'],
+        )
     params_global = to_params_global(params)
     capacity      = params['V_MAX_DAILY']
 

@@ -209,7 +209,9 @@ epi-vaccine-rl/
     ├── sensitivity_beta.py      # beta sweep [0.06, 0.08, 0.10, 0.12, 0.15]
     ├── sensitivity_vmax.py      # V_MAX_DAILY sweep [10, 20, 40, 60, 80]
     ├── sensitivity_groupsize.py # N sweep [5000, 7000, 9000, 11000, 13000]
-    └── sensitivity_epsilon.py   # Vaccine efficacy sweep [0.35, 0.45, 0.55, 0.65, 0.75]
+    ├── sensitivity_epsilon.py   # Vaccine efficacy sweep [0.35, 0.45, 0.55, 0.65, 0.75]
+    ├── sensitivity_infection_risk.py  # beta sweep [0.04→0.15] + wA sweep [0.1→0.9]
+    └── sensitivity_graph_type.py      # NLPA exponent sweep [0.5, 0.75, 1.0, 1.25, 1.5]
 ```
 
 ---
@@ -260,6 +262,8 @@ Each experiment sweeps one parameter while holding everything else at the HCP ca
 | `sensitivity_vmax.py` | `V_MAX_DAILY` | 10, 20, 40, 60, 80 | Does scarcity or abundance of doses change who wins? |
 | `sensitivity_groupsize.py` | `N` | 5k → 13k | Does population scale affect relative performance? |
 | `sensitivity_epsilon.py` | `epsilon` | 0.35 → 0.75 | How much does vaccine efficacy matter for each method? |
+| `sensitivity_infection_risk.py` | `beta`, `wA` | beta 0.04→0.15 / wA 0.1→0.9 | How do transmissibility and hidden asymptomatic spread interact with allocation? |
+| `sensitivity_graph_type.py` | NLPA `alpha_pa` | 0.5, 0.75, 1.0, 1.25, 1.5 | Does network heterogeneity (hub dominance) change which allocation method wins? |
 
 Run any experiment individually:
 

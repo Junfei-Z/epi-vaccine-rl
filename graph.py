@@ -11,6 +11,98 @@ import numpy as np
 import networkx as nx
 
 
+def build_graph_nlpa(
+    n: int,
+    m: int,
+    alpha_pa: float,
+    seed: int,
+    high_risk_prob: float,
+    alpha_std: float,
+) -> tuple:
+    """
+    Build a graph using non-linear preferential attachment (NLPA) and
+    partition nodes into three groups.
+
+    Standard BA uses linear PA: p_i ∝ k_i.
+    NLPA generalises to:  p_i ∝ k_i^alpha_pa / Σ_j k_j^alpha_pa
+
+    Regime summary (Wikipedia — "Non-linear preferential attachment"):
+      alpha_pa < 1  — sub-linear PA → stretched exponential degree dist.
+                       hubs still exist but are less dominant
+      alpha_pa = 1  — standard BA → power law with γ ≈ 3  (same as BA)
+      alpha_pa > 1  — super-linear PA → winner-takes-all, one or few
+                       nodes accumulate almost all edges ("gelation")
+
+    Implementation notes
+    --------------------
+    NetworkX does not expose the alpha exponent natively, so we grow the
+    graph manually using the Barabási–Albert growth protocol:
+      • Start with a complete graph on (m+1) nodes.
+      • At each step add one node; connect it to m existing nodes sampled
+        without replacement with probability ∝ k_i^alpha_pa.
+      • Self-loops are forbidden; multi-edges are avoided.
+
+    Parameters
+    ----------
+    n            : total number of nodes in the final graph
+    m            : number of edges each new node attaches to
+    alpha_pa     : PA non-linearity exponent
+    seed         : RNG seed
+    high_risk_prob : probability a non-hub node is assigned to group Y
+    alpha_std    : hub threshold multiplier (Z if degree ≥ μ + alpha_std·σ)
+
+    Returns
+    -------
+    G        : networkx Graph
+    groups   : dict with keys 'X', 'Y', 'Z' mapping to sets of node ids
+    deg_dict : dict mapping node id → degree
+    """
+    rng = np.random.default_rng(seed)
+
+    # --- grow graph with NLPA ---
+    G = nx.complete_graph(m + 1)
+    # ensure degrees are ints in a mutable dict
+    deg = dict(G.degree())
+
+    for new_node in range(m + 1, n):
+        existing = list(G.nodes())
+        # compute NLPA weights
+        weights = np.array([deg[v] ** alpha_pa for v in existing], dtype=float)
+        total = weights.sum()
+        if total == 0:
+            probs = np.ones(len(existing)) / len(existing)
+        else:
+            probs = weights / total
+
+        # sample m distinct targets
+        targets = rng.choice(existing, size=m, replace=False, p=probs)
+
+        G.add_node(new_node)
+        deg[new_node] = 0
+        for t in targets:
+            G.add_edge(new_node, t)
+            deg[new_node] += 1
+            deg[t] += 1
+
+    deg_dict = deg
+
+    # --- group assignment (same logic as build_graph_and_groups) ---
+    deg_vals  = np.array(list(deg_dict.values()), dtype=float)
+    mu, sigma = deg_vals.mean(), deg_vals.std()
+    threshold = mu + alpha_std * sigma
+
+    groups = {'X': set(), 'Y': set(), 'Z': set()}
+    for node in G.nodes():
+        if deg_dict[node] >= threshold:
+            groups['Z'].add(node)
+        elif rng.random() <= high_risk_prob:
+            groups['Y'].add(node)
+        else:
+            groups['X'].add(node)
+
+    return G, groups, deg_dict
+
+
 def build_graph_and_groups(
     n: int,
     m: int,

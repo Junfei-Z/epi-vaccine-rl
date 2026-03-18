@@ -105,7 +105,19 @@ df_multiseed = run_multiseed(
 )
 
 
-# ── Cell 11 (optional): Download all results ─────────────────
+# ── Cell 12: Sensitivity — degree distribution (NLPA alpha) ──
+# Sweeps the non-linear preferential-attachment exponent:
+#   alpha < 1 → sub-linear PA → more uniform degree distribution
+#   alpha = 1 → standard BA (baseline)
+#   alpha > 1 → super-linear PA → extreme hubs / winner-takes-all
+from experiments.sensitivity_graph_type import run_sensitivity_graph_type
+print("\n" + "="*60)
+print("Running DEGREE DISTRIBUTION sensitivity  alpha ∈ [0.5,0.75,1.0,1.25,1.5]")
+print("="*60)
+df_graph = run_sensitivity_graph_type(base_out_dir='results/sensitivity_graph_type')
+
+
+# ── Cell 12 (optional): Download all results ─────────────────
 # Uncomment to zip and download every CSV from the results/ folder
 #
 # import shutil
