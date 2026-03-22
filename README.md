@@ -211,7 +211,8 @@ epi-vaccine-rl/
     ├── sensitivity_groupsize.py # N sweep [5000, 7000, 9000, 11000, 13000]
     ├── sensitivity_epsilon.py   # Vaccine efficacy sweep [0.35, 0.45, 0.55, 0.65, 0.75]
     ├── sensitivity_infection_risk.py  # beta sweep [0.04→0.15] + wA sweep [0.1→0.9]
-    └── sensitivity_graph_type.py      # NLPA exponent sweep [0.5, 0.75, 1.0, 1.25, 1.5]
+    ├── sensitivity_graph_type.py      # NLPA exponent sweep [0.5, 0.75, 1.0, 1.25, 1.5]
+    └── sensitivity_highrisk.py        # high_risk_prob sweep [0.17, 0.25, 0.32, 0.40]
 ```
 
 ---
@@ -264,6 +265,7 @@ Each experiment sweeps one parameter while holding everything else at the HCP ca
 | `sensitivity_epsilon.py` | `epsilon` | 0.35 → 0.75 | How much does vaccine efficacy matter for each method? |
 | `sensitivity_infection_risk.py` | `beta`, `wA` | beta 0.04→0.15 / wA 0.1→0.9 | How do transmissibility and hidden asymptomatic spread interact with allocation? |
 | `sensitivity_graph_type.py` | NLPA `alpha_pa` | 0.5, 0.75, 1.0, 1.25, 1.5 | Does network heterogeneity (hub dominance) change which allocation method wins? |
+| `sensitivity_highrisk.py` | `high_risk_prob` | 0.17 → 0.40 | If the at-risk age threshold lowers (more high-risk people), does HRP pull ahead of HCP? |
 
 Run any experiment individually:
 

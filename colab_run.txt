@@ -117,7 +117,18 @@ print("="*60)
 df_graph = run_sensitivity_graph_type(base_out_dir='results/sensitivity_graph_type')
 
 
-# ── Cell 12 (optional): Download all results ─────────────────
+# ── Cell 13: Sensitivity — high-risk population size ─────────
+# Simulates "younging" of the at-risk threshold (e.g. lowering from 65+ to 45+)
+# by sweeping high_risk_prob ∈ [0.17, 0.25, 0.32, 0.40].
+# Runs both HCP and HRP strategies for each value.
+from experiments.sensitivity_highrisk import run_sensitivity_highrisk
+print("\n" + "="*60)
+print("Running HIGH-RISK SIZE sensitivity  prob ∈ [0.17, 0.25, 0.32, 0.40]")
+print("="*60)
+df_highrisk = run_sensitivity_highrisk(base_out_dir='results/sensitivity_highrisk')
+
+
+# ── Cell 13 (optional): Download all results ─────────────────
 # Uncomment to zip and download every CSV from the results/ folder
 #
 # import shutil
