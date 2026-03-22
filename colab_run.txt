@@ -128,7 +128,21 @@ print("="*60)
 df_highrisk = run_sensitivity_highrisk(base_out_dir='results/sensitivity_highrisk')
 
 
-# ── Cell 13 (optional): Download all results ─────────────────
+# ── Cell 14: Sensitivity — disease severity (pY, dY) ─────────
+# Sweeps hospitalisation prob pY and death prob dY for the high-risk group:
+#   baseline: pY=0.20, dY=0.27
+#   moderate: pY=0.30, dY=0.37
+#   severe:   pY=0.40, dY=0.47
+#   critical: pY=0.50, dY=0.57
+# Runs both HCP and HRP strategies at each level.
+from experiments.sensitivity_severity import run_sensitivity_severity
+print("\n" + "="*60)
+print("Running SEVERITY sensitivity  pY/dY ∈ [baseline→critical]")
+print("="*60)
+df_severity = run_sensitivity_severity(base_out_dir='results/sensitivity_severity')
+
+
+# ── Cell 14 (optional): Download all results ─────────────────
 # Uncomment to zip and download every CSV from the results/ folder
 #
 # import shutil
