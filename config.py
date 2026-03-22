@@ -91,7 +91,7 @@ PARAMS_HRP = {
 PARAMS_NODE_RL = {
     'N': 1000, 'BA_M': 3, 'SEED': 42,
     'HIGH_RISK_PROB': HIGH_RISK_PROB, 'ALPHA_STD': ALPHA_STD,
-    'T_HORIZON': T_HORIZON, 'V_MAX_DAILY': 5,
+    'T_HORIZON': T_HORIZON, 'V_MAX_DAILY': 2,
     'INITIAL_INFECTED': 50,
     'beta': 0.08,
     'wA': 0.5, 'wP': 0.8, 'wI': 1.0,
