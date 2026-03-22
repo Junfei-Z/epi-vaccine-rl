@@ -86,7 +86,8 @@ def run_sensitivity_network_type(
     base_out_dir: str = 'results/sensitivity_network_type',
 ) -> pd.DataFrame:
     """
-    Run HCP scenario across four network types and collect death counts.
+    Run both HCP and HRP strategies across four network types and collect
+    death counts for all three methods (Warm-RL, Cold-RL, OC-Guided).
 
     Parameters
     ----------
@@ -95,7 +96,9 @@ def run_sensitivity_network_type(
     Returns
     -------
     DataFrame with columns:
-        network, label, Warm_RL_Deaths, Cold_RL_Deaths, OC_Guided_Deaths
+        network, label,
+        HCP_Warm_RL, HCP_Cold_RL, HCP_OC_Guided,
+        HRP_Warm_RL, HRP_Cold_RL, HRP_OC_Guided
     """
     os.makedirs(base_out_dir, exist_ok=True)
     rows = []
@@ -105,24 +108,43 @@ def run_sensitivity_network_type(
         print(f"[sensitivity_network_type] {net['name']}: {net['label']}")
         print(f"{'='*60}")
 
-        params = copy.deepcopy(PARAMS_HCP)
-        params.update(net['params_extra'])
+        # --- HCP: prioritise high-contact hubs (Z) ---
+        params_hcp = copy.deepcopy(PARAMS_HCP)
+        params_hcp.update(net['params_extra'])
 
-        results = run_one_scenario(
-            params=params,
+        print(f"\n  [HCP] Prioritise high-contact (Z) ...")
+        res_hcp = run_one_scenario(
+            params=params_hcp,
             scenario_tag='hcp',
             priority='Z',
             priority_order=[3, 2, 1],
             bias=[0, 0, 1],
-            out_dir=os.path.join(base_out_dir, net['name']),
+            out_dir=os.path.join(base_out_dir, net['name'], 'hcp'),
+        )
+
+        # --- HRP: prioritise high-risk group (Y) ---
+        params_hrp = copy.deepcopy(PARAMS_HCP)
+        params_hrp.update(net['params_extra'])
+
+        print(f"\n  [HRP] Prioritise high-risk (Y) ...")
+        res_hrp = run_one_scenario(
+            params=params_hrp,
+            scenario_tag='hrp',
+            priority='Y',
+            priority_order=[2, 3, 1],
+            bias=[0, 1, 0],
+            out_dir=os.path.join(base_out_dir, net['name'], 'hrp'),
         )
 
         rows.append({
             'network':          net['name'],
             'label':            net['label'],
-            'Warm_RL_Deaths':   results['deaths_warm_rl'],
-            'Cold_RL_Deaths':   results['deaths_cold_rl'],
-            'OC_Guided_Deaths': results['deaths_ocg'],
+            'HCP_Warm_RL':      res_hcp['deaths_warm_rl'],
+            'HCP_Cold_RL':      res_hcp['deaths_cold_rl'],
+            'HCP_OC_Guided':    res_hcp['deaths_ocg'],
+            'HRP_Warm_RL':      res_hrp['deaths_warm_rl'],
+            'HRP_Cold_RL':      res_hrp['deaths_cold_rl'],
+            'HRP_OC_Guided':    res_hrp['deaths_ocg'],
         })
         print(f"[sensitivity_network_type] DONE: {net['name']}")
 
