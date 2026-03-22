@@ -87,13 +87,16 @@ PARAMS_HRP = {
 }
 
 
-# Node-aware RL experiment: smaller population for tractable node-level scoring
+# Node-aware RL experiment: N=5000 for tractable node-level scoring
+# Scaled proportionally from N=1000 baseline:
+#   V_MAX_DAILY = 10  (0.2% of N per day, same ratio as N=1000 version)
+#   INITIAL_INFECTED = 300  (6% of N, seeds across all groups so OC cannot protect Z hubs)
 PARAMS_NODE_RL = {
-    'N': 1000, 'BA_M': 3, 'SEED': 42,
+    'N': 5000, 'BA_M': 3, 'SEED': 42,
     'HIGH_RISK_PROB': HIGH_RISK_PROB, 'ALPHA_STD': ALPHA_STD,
-    'T_HORIZON': T_HORIZON, 'V_MAX_DAILY': 2,
-    'INITIAL_INFECTED': 60,
-    'INIT_INFECTED_X': 30, 'INIT_INFECTED_Y': 10, 'INIT_INFECTED_Z': 20,
+    'T_HORIZON': T_HORIZON, 'V_MAX_DAILY': 10,
+    'INITIAL_INFECTED': 300,
+    'INIT_INFECTED_X': 150, 'INIT_INFECTED_Y': 50, 'INIT_INFECTED_Z': 100,
     'beta': 0.08,
     'wA': 0.5, 'wP': 0.8, 'wI': 1.0,
     'tauE': 1/3, 'tauP': 1/2, 'tauA': 1/5,

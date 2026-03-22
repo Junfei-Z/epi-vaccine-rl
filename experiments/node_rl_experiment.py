@@ -55,7 +55,7 @@ def run_node_rl_experiment(
     # ------------------------------------------------------------------ #
     # Build graph                                                          #
     # ------------------------------------------------------------------ #
-    print("\n[node_rl] Building graph (N=1000) ...")
+    print("\n[node_rl] Building graph (N=5000) ...")
     G, groups, deg_dict = build_graph_and_groups(
         n=params['N'], m=params['BA_M'], seed=params['SEED'],
         high_risk_prob=params['HIGH_RISK_PROB'], alpha_std=params['ALPHA_STD'],
@@ -179,7 +179,7 @@ def run_node_rl_experiment(
     ]
     df = pd.DataFrame(rows)
     print("\n" + "=" * 55)
-    print("NODE-AWARE RL EXPERIMENT  (N=1000, HCP, V_MAX=5)")
+    print("NODE-AWARE RL EXPERIMENT  (N=5000, HCP, V_MAX=10)")
     print("=" * 55)
     print(df.to_string(index=False))
 
