@@ -131,6 +131,205 @@ class EpidemicNodeEnv:
         x    = comp.flatten() / float(self.N)
         return np.concatenate([x, np.array([self.day], dtype=np.float32)])
 
+    def _infection_pressure(self) -> np.ndarray:
+        """
+        For each group g, compute the fraction of susceptible nodes in g
+        that have at least one infectious neighbour (P, A, or I).
+
+        This is genuinely new information unavailable to the ODE — it captures
+        which groups are about to be hit by the epidemic wave right now.
+
+        Returns
+        -------
+        pressure : np.ndarray of shape (3,), values in [0, 1]
+        """
+        infectious_states = {P, A, I}
+        pressure = np.zeros(3, dtype=np.float32)
+        for gi, g in enumerate(self.groups):
+            s_nodes = [n for n in self.group_nodes[g] if self.status[n] == S]
+            if len(s_nodes) == 0:
+                pressure[gi] = 0.0
+                continue
+            at_risk = sum(
+                1 for n in s_nodes
+                if any(self.status[nb] in infectious_states
+                       for nb in self.G.neighbors(n))
+            )
+            pressure[gi] = at_risk / len(s_nodes)
+        return pressure
+
+    def obs_with_pressure(self) -> np.ndarray:
+        """
+        Extended observation: 31-dim base obs + 3 pressure features = 34-dim.
+        Used by the NodeScoringPolicy as the global state.
+        """
+        return np.concatenate([self._obs(), self._infection_pressure()])
+
+    def node_features(self) -> tuple:
+        """
+        Compute per-node feature vectors for all currently susceptible nodes.
+
+        Each node i gets a 6-dim feature vector:
+            [degree_i / max_degree,
+             inf_nbr_count_i / degree_i,   ← infectious neighbour fraction
+             float(group == X),
+             float(group == Y),
+             float(group == Z),
+             day / T_HORIZON]
+
+        Returns
+        -------
+        s_node_ids : list of int — node ids of susceptible nodes
+        feats      : np.ndarray (n_susceptible, 6)
+        """
+        infectious_states = {P, A, I}
+        max_deg = max(self.deg.values()) if self.deg else 1
+
+        s_node_ids = []
+        rows = []
+        T = self.params.get('T_HORIZON', 60)
+        day_norm = float(self.day) / float(T)
+
+        for g, label in zip(self.groups, ['X', 'Y', 'Z']):
+            gX = float(label == 'X')
+            gY = float(label == 'Y')
+            gZ = float(label == 'Z')
+            for n in self.group_nodes[g]:
+                if self.status[n] != S:
+                    continue
+                deg_i = max(self.deg[n], 1)
+                inf_nbrs = sum(
+                    1 for nb in self.G.neighbors(n)
+                    if self.status[nb] in infectious_states
+                )
+                rows.append([
+                    deg_i / max_deg,
+                    inf_nbrs / deg_i,
+                    gX, gY, gZ,
+                    day_norm,
+                ])
+                s_node_ids.append(n)
+
+        if len(rows) == 0:
+            return [], np.zeros((0, 6), dtype=np.float32)
+        return s_node_ids, np.array(rows, dtype=np.float32)
+
+    def step_node_ids(self, node_ids: list) -> tuple:
+        """
+        Execute one environment day using an explicit list of node ids to
+        vaccinate (node-level action), instead of group-level shares.
+
+        Parameters
+        ----------
+        node_ids : list of int — susceptible node ids to vaccinate today
+
+        Returns
+        -------
+        obs_pressure : np.ndarray (34,) — extended observation with pressure
+        reward       : float
+        done         : bool
+        info         : dict
+        """
+        day_start = self.status.copy()
+
+        # --- vaccination ---
+        details = []
+        actual_vaccinated = 0
+        for node in node_ids:
+            if self.status[node] == S:          # safety check
+                nbrs          = list(self.G.neighbors(node))
+                inf_nbr_count = sum(1 for u in nbrs if day_start[u] in (P, A, I))
+                details.append({
+                    'day':           int(self.day),
+                    'id':            int(node),
+                    'group':         int(self.node_to_group[node]),
+                    'degree':        int(self.deg[node]),
+                    'inf_nbr_count': int(inf_nbr_count),
+                })
+                self.status[node] = V
+                actual_vaccinated += 1
+
+        unused = max(0, self.V_MAX - actual_vaccinated)
+
+        # --- disease progression (reuse existing substep logic) ---
+        cur = self.status.copy()
+        for _ in range(self.substeps):
+            comp = np.zeros((3, 10), dtype=float)
+            for g in self.groups:
+                node_ids_g = self.group_nodes[g]
+                vals       = cur[node_ids_g]
+                for state in range(10):
+                    comp[g - 1, state] = np.sum(vals == state)
+
+            wA = self.params['wA']; wP = self.params['wP']; wI = self.params['wI']
+            Ic   = np.array(
+                [wA*comp[i, A] + wP*comp[i, P] + wI*comp[i, I] for i in range(3)],
+                dtype=float,
+            )
+            beta = np.array(
+                [self.params[1]['beta'], self.params[2]['beta'], self.params[3]['beta']],
+                dtype=float,
+            )
+            frac = Ic / np.maximum(self.Ng, 1.0)
+            lam  = np.array(
+                [beta[i] * np.dot(self.C[i], frac) for i in range(3)],
+                dtype=float,
+            )
+
+            next_state = cur.copy()
+            for g in self.groups:
+                lam_g = lam[g - 1]
+                eps   = self.params[g].get('epsilon', 0.5)
+                tauE  = self.params[g]['tauE']; tauP = self.params[g]['tauP']
+                tauA  = self.params[g]['tauA']; tauI = self.params[g]['tauI']
+                tauL  = self.params[g]['tauL']; tauH = self.params[g]['tauH']
+                sprob = self.params[g]['s']
+                pprob = self.params[g]['p']
+                dprob = self.params[g]['d']
+
+                for node in self.group_nodes[g]:
+                    state = cur[node]
+                    if state == S:
+                        if self.rng.random() < 1.0 - math.exp(-lam_g * self.dt):
+                            next_state[node] = E
+                    elif state == V:
+                        if self.rng.random() < 1.0 - math.exp(-lam_g * (1.0 - eps) * self.dt):
+                            next_state[node] = E
+                    elif state == E:
+                        if self.rng.random() < 1.0 - math.exp(-tauE * self.dt):
+                            next_state[node] = P
+                    elif state == P:
+                        if self.rng.random() < 1.0 - math.exp(-tauP * self.dt):
+                            next_state[node] = I if self.rng.random() < sprob else A
+                    elif state == A:
+                        if self.rng.random() < 1.0 - math.exp(-tauA * self.dt):
+                            next_state[node] = R
+                    elif state == I:
+                        if self.rng.random() < 1.0 - math.exp(-tauI * self.dt):
+                            next_state[node] = L
+                    elif state == L:
+                        if self.rng.random() < 1.0 - math.exp(-tauL * self.dt):
+                            next_state[node] = H if self.rng.random() < pprob else R
+                    elif state == H:
+                        if self.rng.random() < 1.0 - math.exp(-tauH * self.dt):
+                            next_state[node] = D if self.rng.random() < dprob else R
+            cur = next_state
+
+        self.status = cur
+
+        prev_deaths  = int(np.sum(day_start == D))
+        new_deaths   = int(np.sum(self.status == D))
+        deaths_today = new_deaths - prev_deaths
+        reward       = -float(deaths_today) * self.reward_scale - 0.01 * float(unused)
+
+        self.day += 1
+        done = self.day >= int(self.params.get('T_HORIZON', self.day))
+
+        return self.obs_with_pressure(), reward, done, {
+            'details': details,
+            'unused':  unused,
+        }
+
     def _project_doses(self, shares) -> np.ndarray:
         """
         Convert a simplex share vector to feasible integer dose counts.

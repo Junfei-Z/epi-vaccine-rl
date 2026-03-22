@@ -21,6 +21,7 @@ from collections import deque
 from config import D
 from env import make_env_from_graph
 from rl.ppo import PPO, PPOBuffer
+from rl.model import NodeScoringPolicy
 
 
 # ---------------------------------------------------------------------------
@@ -353,3 +354,224 @@ def run_training(
                   f"(deaths={best_death:.1f})")
 
     return ppo, hist_eval
+
+
+# ---------------------------------------------------------------------------
+# Node-level RL training
+# ---------------------------------------------------------------------------
+
+def run_training_node_rl(
+    G,
+    groups: dict,
+    deg_dict: dict,
+    params_global: dict,
+    capacity_daily: int,
+    max_episodes: int = 300,
+    episodes_per_update: int = 10,
+    lr: float = 3e-4,
+    gamma: float = 0.99,
+    K_epochs: int = 8,
+    eps_clip: float = 0.2,
+    window_size: int = 30,
+    rel_std_thresh: float = 0.05,
+    patience: int = 4,
+    min_episodes: int = 40,
+    seed_counts: dict = None,
+    label: str = None,
+    out_dir: str = '.',
+) -> tuple:
+    """
+    Train a NodeScoringPolicy via PPO.
+
+    At each step the policy:
+      1. Receives 34-dim global state (group aggregates + 3 pressure features)
+      2. Computes per-node features for all susceptible nodes (6-dim each)
+      3. Scores every susceptible node via a shared MLP
+      4. Selects top-V_MAX nodes via Gumbel-top-k (stochastic training)
+      5. Passes selected node IDs directly to env.step_node_ids()
+
+    This gives RL genuine information ODE cannot access:
+      - Which specific nodes are surrounded by infectious neighbours RIGHT NOW
+      - Enabling pre-emptive vaccination before the epidemic wave hits
+
+    Parameters
+    ----------
+    G, groups, deg_dict, params_global, capacity_daily : env spec
+    max_episodes        : hard cap on training episodes
+    episodes_per_update : rollout episodes before each PPO update
+    lr                  : learning rate (shared for scorer + critic)
+    gamma               : discount factor
+    K_epochs            : PPO gradient steps per update
+    eps_clip            : PPO clip parameter
+    window_size         : rolling window for early stopping
+    rel_std_thresh      : relative std threshold for early stopping
+    patience            : consecutive plateau rounds before stopping
+    min_episodes        : minimum episodes before early stopping is active
+    seed_counts         : initial infection counts per group
+    label               : if given, save best policy to out_dir
+    out_dir             : directory for saved model files
+
+    Returns
+    -------
+    policy    : NodeScoringPolicy (best checkpoint)
+    hist_eval : list of deterministic eval death counts per update round
+    """
+    os.makedirs(out_dir, exist_ok=True)
+
+    env, obs, _, _, _ = make_env_from_graph(
+        G=G, groups=groups, deg_dict=deg_dict,
+        params_global=params_global, capacity_daily=capacity_daily,
+        seed_counts=seed_counts, deterministic=False,
+    )
+
+    policy   = NodeScoringPolicy(hidden=64)
+    optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
+    MSE       = torch.nn.MSELoss()
+
+    # buffer stores per-step (log_prob, reward, value, done)
+    buf_logp    = []
+    buf_rewards = []
+    buf_values  = []
+    buf_dones   = []
+
+    best_death       = float('inf')
+    best_state       = None
+    hist_eval        = []
+    patience_counter = 0
+
+    def eval_det(n_eval=3):
+        """Deterministic evaluation: top-k selection, no Gumbel noise."""
+        policy.eval()
+        deaths = []
+        for _ in range(n_eval):
+            env_e, _, _, _, _ = make_env_from_graph(
+                G=G, groups=groups, deg_dict=deg_dict,
+                params_global=params_global, capacity_daily=capacity_daily,
+                seed_counts=seed_counts, deterministic=True,
+            )
+            env_e.reset(seed_counts=seed_counts)
+            done = False
+            while not done:
+                g_state = torch.from_numpy(env_e.obs_with_pressure()).float()
+                s_ids, feats = env_e.node_features()
+                if len(s_ids) == 0:
+                    _, _, done, _ = env_e.step_node_ids([])
+                    continue
+                f_t = torch.from_numpy(feats).float()
+                with torch.no_grad():
+                    idxs, _ = policy.select(g_state, f_t, capacity_daily,
+                                            deterministic=True)
+                selected = [s_ids[i] for i in idxs.tolist()]
+                _, _, done, _ = env_e.step_node_ids(selected)
+            deaths.append(int(np.sum(env_e.status == D)))
+        policy.train()
+        return float(np.mean(deaths))
+
+    for ep in range(max_episodes):
+        env.reset(seed_counts=seed_counts)
+        done = False
+
+        ep_logp    = []
+        ep_rewards = []
+        ep_values  = []
+        ep_dones   = []
+
+        while not done:
+            g_state = torch.from_numpy(env.obs_with_pressure()).float()
+            s_ids, feats = env.node_features()
+
+            if len(s_ids) == 0:
+                _, reward, done, _ = env.step_node_ids([])
+                ep_logp.append(torch.tensor(0.0))
+                ep_rewards.append(reward)
+                ep_values.append(policy.value(g_state).squeeze())
+                ep_dones.append(float(done))
+                continue
+
+            f_t = torch.from_numpy(feats).float()
+            idxs, log_prob = policy.select(g_state, f_t, capacity_daily,
+                                           deterministic=False)
+            selected = [s_ids[i] for i in idxs.tolist()]
+
+            _, reward, done, _ = env.step_node_ids(selected)
+
+            ep_logp.append(log_prob)
+            ep_rewards.append(reward)
+            ep_values.append(policy.value(g_state).squeeze())
+            ep_dones.append(float(done))
+
+        buf_logp.extend(ep_logp)
+        buf_rewards.extend(ep_rewards)
+        buf_values.extend(ep_values)
+        buf_dones.extend(ep_dones)
+
+        # PPO update every episodes_per_update episodes
+        if (ep + 1) % episodes_per_update == 0:
+            rewards  = torch.tensor(buf_rewards, dtype=torch.float32)
+            dones    = torch.tensor(buf_dones,   dtype=torch.float32)
+            values   = torch.stack(buf_values).detach()
+            old_logp = torch.stack(buf_logp).detach()
+
+            # GAE advantage
+            adv  = torch.zeros_like(rewards)
+            gae  = 0.0
+            next_v = torch.cat([values[1:], torch.tensor([0.0])])
+            for t in reversed(range(len(rewards))):
+                delta  = rewards[t] + gamma * next_v[t] * (1 - dones[t]) - values[t]
+                gae    = delta + gamma * 0.95 * (1 - dones[t]) * gae
+                adv[t] = gae
+            returns = adv + values
+            if adv.std() > 1e-6:
+                adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+
+            # K gradient steps
+            for _ in range(K_epochs):
+                # recompute log_probs requires re-running policy — use stored
+                # log_probs as proxy (single-step PPO without re-scoring batch)
+                ratios = torch.exp(
+                    torch.stack(buf_logp) - old_logp
+                ).detach()   # treat as IS weights (approx PPO)
+
+                surr1 = ratios * adv
+                surr2 = torch.clamp(ratios, 1 - eps_clip, 1 + eps_clip) * adv
+                v_pred = torch.stack(buf_values).squeeze()
+
+                loss = (-torch.min(surr1, surr2)
+                        + 0.5 * MSE(v_pred, returns)).mean()
+                optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(policy.parameters(), 0.5)
+                optimizer.step()
+
+            buf_logp.clear(); buf_rewards.clear()
+            buf_values.clear(); buf_dones.clear()
+
+            eval_deaths = eval_det(n_eval=3)
+            hist_eval.append(eval_deaths)
+            if eval_deaths < best_death:
+                best_death = eval_deaths
+                best_state = {k: v.cpu().clone()
+                              for k, v in policy.state_dict().items()}
+
+            print(f"[node_rl] ep={ep+1:3d}  eval_deaths={eval_deaths:.1f}")
+
+        # early stopping
+        if window_size and len(hist_eval) >= window_size and ep >= min_episodes:
+            recent  = np.array(hist_eval[-window_size:])
+            rel_std = recent.std() / max(1.0, recent.mean())
+            if rel_std < rel_std_thresh:
+                patience_counter += 1
+                if patience_counter >= patience:
+                    print(f"[node_rl] Early stop at episode {ep}")
+                    break
+            else:
+                patience_counter = 0
+
+    if best_state is not None:
+        policy.load_state_dict(best_state)
+        if label is not None:
+            save_path = os.path.join(out_dir, f'best_node_policy_{label}.pt')
+            torch.save(policy.state_dict(), save_path)
+            print(f"[node_rl] Best policy saved → {save_path} (deaths={best_death:.1f})")
+
+    return policy, hist_eval

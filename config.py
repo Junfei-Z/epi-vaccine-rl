@@ -87,6 +87,22 @@ PARAMS_HRP = {
 }
 
 
+# Node-aware RL experiment: smaller population for tractable node-level scoring
+PARAMS_NODE_RL = {
+    'N': 1000, 'BA_M': 3, 'SEED': 42,
+    'HIGH_RISK_PROB': HIGH_RISK_PROB, 'ALPHA_STD': ALPHA_STD,
+    'T_HORIZON': T_HORIZON, 'V_MAX_DAILY': 5,
+    'INITIAL_INFECTED': 50,
+    'beta': 0.08,
+    'wA': 0.5, 'wP': 0.8, 'wI': 1.0,
+    'tauE': 1/3, 'tauP': 1/2, 'tauA': 1/5,
+    'tauI': 1/3, 'tauL': 1/5, 'tauH': 1/10,
+    'sX': 0.5, 'sY': 0.8, 'sZ': 0.6,
+    'pX': 0.05, 'pY': 0.2, 'pZ': 0.08,
+    'dX': 0.02, 'dY': 0.27, 'dZ': 0.04,
+}
+
+
 def to_params_global(p: dict) -> dict:
     """
     Convert a raw scenario param dict into the group-structured format

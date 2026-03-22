@@ -21,6 +21,128 @@ from torch.distributions import Dirichlet
 
 from config import MIN_CONC, CONC_SCALE
 
+# ---------------------------------------------------------------------------
+# Node Scoring Policy
+# ---------------------------------------------------------------------------
+
+class NodeScoringPolicy(nn.Module):
+    """
+    Node-level vaccine allocation policy.
+
+    Instead of outputting group-level Dirichlet shares, this policy scores
+    every susceptible node individually and selects the top V_MAX to vaccinate.
+
+    Each node's input is a concatenation of:
+      - Local node features  (6-dim): degree, infectious-neighbour fraction,
+                                      group one-hot (3), normalised day
+      - Global epidemic state (34-dim): 30 compartment fractions + day/T
+                                        + 3 pressure features
+    Total input dim: 40
+
+    The critic takes only the 34-dim global state (shared across all nodes).
+
+    Parameters
+    ----------
+    global_dim   : dimension of global state vector (default 34)
+    node_feat_dim: dimension of per-node feature vector (default 6)
+    hidden       : hidden layer width
+    """
+
+    NODE_FEAT_DIM  = 6    # degree_norm, inf_nbr_frac, gX, gY, gZ, day_norm
+    GLOBAL_DIM     = 34   # 30 compartment fracs + day/T + 3 pressure features
+
+    def __init__(self, hidden: int = 64):
+        super().__init__()
+        in_dim = self.NODE_FEAT_DIM + self.GLOBAL_DIM
+
+        # Shared MLP scorer — same weights applied to every node
+        self.scorer = nn.Sequential(
+            nn.Linear(in_dim, hidden), nn.Tanh(),
+            nn.Linear(hidden, hidden), nn.Tanh(),
+            nn.Linear(hidden, 1),
+        )
+
+        # Critic takes global state only
+        self.critic = nn.Sequential(
+            nn.Linear(self.GLOBAL_DIM, hidden), nn.Tanh(),
+            nn.Linear(hidden, hidden),          nn.Tanh(),
+            nn.Linear(hidden, 1),
+        )
+
+    def score(
+        self,
+        global_state: torch.Tensor,
+        node_feats: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute a scalar score for each susceptible node.
+
+        Parameters
+        ----------
+        global_state : Tensor (global_dim,)
+        node_feats   : Tensor (n_susceptible, node_feat_dim)
+
+        Returns
+        -------
+        scores : Tensor (n_susceptible,)
+        """
+        n = node_feats.shape[0]
+        g = global_state.unsqueeze(0).expand(n, -1)   # (n, global_dim)
+        x = torch.cat([node_feats, g], dim=-1)         # (n, 40)
+        return self.scorer(x).squeeze(-1)              # (n,)
+
+    def select(
+        self,
+        global_state: torch.Tensor,
+        node_feats: torch.Tensor,
+        k: int,
+        deterministic: bool = False,
+    ) -> tuple:
+        """
+        Select k nodes to vaccinate and return their indices + log-prob.
+
+        Training  (deterministic=False): sample k nodes via Gumbel-top-k so
+          the selection is stochastic and differentiable.
+        Evaluation (deterministic=True): take the top-k by raw score.
+
+        Parameters
+        ----------
+        global_state  : Tensor (global_dim,)
+        node_feats    : Tensor (n_susceptible, node_feat_dim)
+        k             : number of nodes to select (V_MAX_DAILY)
+        deterministic : if True, greedy top-k; else Gumbel-top-k sampling
+
+        Returns
+        -------
+        indices  : LongTensor (min(k, n),) — selected positions in node_feats
+        log_prob : scalar Tensor — sum of log-probs (None if deterministic)
+        """
+        n = node_feats.shape[0]
+        k = min(k, n)
+        if k == 0:
+            return torch.tensor([], dtype=torch.long), torch.tensor(0.0)
+
+        scores = self.score(global_state, node_feats)   # (n,)
+
+        if deterministic:
+            indices = torch.topk(scores, k).indices
+            return indices, None
+
+        # Gumbel-top-k: add Gumbel noise then take top-k
+        gumbel = -torch.log(-torch.log(torch.rand_like(scores) + 1e-10) + 1e-10)
+        perturbed = scores + gumbel
+        indices   = torch.topk(perturbed, k).indices
+
+        # log-prob ≈ sum of log-softmax scores for selected nodes
+        log_probs = torch.log_softmax(scores, dim=0)
+        log_prob  = log_probs[indices].sum()
+
+        return indices, log_prob
+
+    def value(self, global_state: torch.Tensor) -> torch.Tensor:
+        """Critic value estimate from global state."""
+        return self.critic(global_state)
+
 
 class ActorCritic(nn.Module):
     """
