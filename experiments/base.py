@@ -38,7 +38,8 @@ import numpy as np
 import pandas as pd
 
 from config import PARAMS_HCP, PARAMS_HRP, to_params_global
-from graph import build_graph_and_groups, build_graph_nlpa
+from graph import (build_graph_and_groups, build_graph_nlpa,
+                   build_graph_er, build_graph_ws, build_graph_regular)
 from ode_solver import solve, allocations_from_solution
 from allocation import strict_priority_window_fill, cap_to_capacity, to_simplex
 from env import make_env_from_graph
@@ -112,7 +113,27 @@ def run_one_scenario(
     # ------------------------------------------------------------------ #
     # 1. Build graph                                                       #
     # ------------------------------------------------------------------ #
-    if 'ALPHA_PA' in params:
+    net_type = params.get('NETWORK_TYPE', 'BA')
+    avg_deg  = params.get('AVG_DEGREE', params['BA_M'] * 2)
+
+    if net_type == 'ER':
+        G, groups, deg_dict = build_graph_er(
+            n=params['N'], avg_degree=avg_deg, seed=params['SEED'],
+            high_risk_prob=params['HIGH_RISK_PROB'], alpha_std=params['ALPHA_STD'],
+        )
+    elif net_type == 'WS':
+        G, groups, deg_dict = build_graph_ws(
+            n=params['N'], avg_degree=avg_deg,
+            p_rewire=params.get('WS_P_REWIRE', 0.1),
+            seed=params['SEED'], high_risk_prob=params['HIGH_RISK_PROB'],
+            alpha_std=params['ALPHA_STD'],
+        )
+    elif net_type == 'Regular':
+        G, groups, deg_dict = build_graph_regular(
+            n=params['N'], degree=avg_deg, seed=params['SEED'],
+            high_risk_prob=params['HIGH_RISK_PROB'], alpha_std=params['ALPHA_STD'],
+        )
+    elif 'ALPHA_PA' in params:
         G, groups, deg_dict = build_graph_nlpa(
             n=params['N'], m=params['BA_M'], alpha_pa=params['ALPHA_PA'],
             seed=params['SEED'], high_risk_prob=params['HIGH_RISK_PROB'],

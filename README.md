@@ -213,7 +213,8 @@ epi-vaccine-rl/
     ├── sensitivity_infection_risk.py  # beta sweep [0.04→0.15] + wA sweep [0.1→0.9]
     ├── sensitivity_graph_type.py      # NLPA exponent sweep [0.5, 0.75, 1.0, 1.25, 1.5]
     ├── sensitivity_highrisk.py        # high_risk_prob sweep [0.17, 0.25, 0.32, 0.40]
-    └── sensitivity_severity.py        # pY/dY sweep [baseline → critical]
+    ├── sensitivity_severity.py        # pY/dY sweep [baseline → critical]
+    └── sensitivity_network_type.py    # BA vs ER vs WS vs Regular
 ```
 
 ---
@@ -268,6 +269,7 @@ Each experiment sweeps one parameter while holding everything else at the HCP ca
 | `sensitivity_graph_type.py` | NLPA `alpha_pa` | 0.5, 0.75, 1.0, 1.25, 1.5 | Does network heterogeneity (hub dominance) change which allocation method wins? |
 | `sensitivity_highrisk.py` | `high_risk_prob` | 0.17 → 0.40 | If the at-risk age threshold lowers (more high-risk people), does HRP pull ahead of HCP? |
 | `sensitivity_severity.py` | `pY`, `dY` | pY 0.20→0.50 / dY 0.27→0.57 | As the high-risk group becomes more severely affected, does direct protection of Y dominate hub-targeting? |
+| `sensitivity_network_type.py` | network topology | BA, ER, WS, Regular | Does network structure determine which allocation method wins? |
 
 Run any experiment individually:
 

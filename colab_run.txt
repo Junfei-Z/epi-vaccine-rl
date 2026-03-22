@@ -142,7 +142,17 @@ print("="*60)
 df_severity = run_sensitivity_severity(base_out_dir='results/sensitivity_severity')
 
 
-# ── Cell 14 (optional): Download all results ─────────────────
+# ── Cell 15: Sensitivity — network type ──────────────────────
+# Compares BA (scale-free), ER (random), WS (small-world), Regular (uniform)
+# All calibrated to avg degree ~6 so differences come from structure alone.
+from experiments.sensitivity_network_type import run_sensitivity_network_type
+print("\n" + "="*60)
+print("Running NETWORK TYPE sensitivity  [BA, ER, WS, Regular]")
+print("="*60)
+df_network = run_sensitivity_network_type(base_out_dir='results/sensitivity_network_type')
+
+
+# ── Cell 15 (optional): Download all results ─────────────────
 # Uncomment to zip and download every CSV from the results/ folder
 #
 # import shutil

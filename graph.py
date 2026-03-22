@@ -153,6 +153,142 @@ def build_graph_and_groups(
     return G, groups, deg_dict
 
 
+def _assign_groups(G, deg_dict, seed, high_risk_prob, alpha_std):
+    """
+    Shared group-assignment logic for all network types.
+
+    Z — hubs: degree >= mu + alpha_std * sigma
+        (for regular graphs sigma=0, so Z will be empty — handled gracefully)
+    Y — high-risk: non-hub nodes drawn with prob high_risk_prob
+    X — baseline: all remaining nodes
+    """
+    rng = np.random.default_rng(seed)
+    deg_vals = np.array(list(deg_dict.values()), dtype=float)
+    mu, sigma = deg_vals.mean(), deg_vals.std()
+    threshold = mu + alpha_std * sigma
+
+    groups = {'X': set(), 'Y': set(), 'Z': set()}
+    for node in G.nodes():
+        if deg_dict[node] >= threshold:
+            groups['Z'].add(node)
+        elif rng.random() <= high_risk_prob:
+            groups['Y'].add(node)
+        else:
+            groups['X'].add(node)
+    return groups
+
+
+def build_graph_er(
+    n: int,
+    avg_degree: int,
+    seed: int,
+    high_risk_prob: float,
+    alpha_std: float,
+) -> tuple:
+    """
+    Build an Erdős–Rényi G(n, p) random graph.
+
+    Edge probability p is set so that the expected average degree matches
+    `avg_degree`, making it comparable to a BA graph with m = avg_degree // 2.
+
+    In ER graphs every node has roughly the same degree (Poisson distribution),
+    so there are effectively no hubs — the Z group will be small or absent.
+
+    Parameters
+    ----------
+    n          : number of nodes
+    avg_degree : target average degree (p = avg_degree / (n-1))
+    seed       : RNG seed
+    high_risk_prob : prob a non-hub node is assigned to Y
+    alpha_std  : hub threshold multiplier
+
+    Returns
+    -------
+    G, groups, deg_dict
+    """
+    p = avg_degree / (n - 1)
+    G = nx.erdos_renyi_graph(n=n, p=p, seed=seed)
+    deg_dict = dict(G.degree())
+    groups = _assign_groups(G, deg_dict, seed, high_risk_prob, alpha_std)
+    return G, groups, deg_dict
+
+
+def build_graph_ws(
+    n: int,
+    avg_degree: int,
+    p_rewire: float,
+    seed: int,
+    high_risk_prob: float,
+    alpha_std: float,
+) -> tuple:
+    """
+    Build a Watts–Strogatz small-world graph.
+
+    Starts as a ring lattice where each node connects to `avg_degree` nearest
+    neighbours, then rewires each edge with probability p_rewire.
+
+    Properties:
+      p_rewire ≈ 0    → regular ring lattice (high clustering, long paths)
+      p_rewire ≈ 0.1  → small-world regime (high clustering + short paths)
+      p_rewire ≈ 1    → approaches random graph (low clustering)
+
+    Parameters
+    ----------
+    n          : number of nodes
+    avg_degree : each node starts connected to avg_degree nearest neighbours
+                 (must be even)
+    p_rewire   : rewiring probability (0.1 gives canonical small-world)
+    seed       : RNG seed
+    high_risk_prob : prob a non-hub node is assigned to Y
+    alpha_std  : hub threshold multiplier
+
+    Returns
+    -------
+    G, groups, deg_dict
+    """
+    k = avg_degree if avg_degree % 2 == 0 else avg_degree + 1
+    G = nx.watts_strogatz_graph(n=n, k=k, p=p_rewire, seed=seed)
+    deg_dict = dict(G.degree())
+    groups = _assign_groups(G, deg_dict, seed, high_risk_prob, alpha_std)
+    return G, groups, deg_dict
+
+
+def build_graph_regular(
+    n: int,
+    degree: int,
+    seed: int,
+    high_risk_prob: float,
+    alpha_std: float,
+) -> tuple:
+    """
+    Build a random d-regular graph where every node has exactly `degree` edges.
+
+    This is the most homogeneous network possible — no hubs, no variation in
+    connectivity.  The Z group will always be empty (sigma = 0, threshold = mu,
+    no node exceeds it strictly).  Serves as a baseline where hub-targeting
+    has no meaning.
+
+    Parameters
+    ----------
+    n          : number of nodes (n * degree must be even)
+    degree     : exact degree of every node
+    seed       : RNG seed
+    high_risk_prob : prob a non-hub node is assigned to Y
+    alpha_std  : hub threshold multiplier (Z will be empty for regular graphs)
+
+    Returns
+    -------
+    G, groups, deg_dict
+    """
+    # n * degree must be even for a regular graph to exist
+    if (n * degree) % 2 != 0:
+        n = n + 1
+    G = nx.random_regular_graph(d=degree, n=n, seed=seed)
+    deg_dict = dict(G.degree())
+    groups = _assign_groups(G, deg_dict, seed, high_risk_prob, alpha_std)
+    return G, groups, deg_dict
+
+
 def get_contact_matrix(G, groups: dict) -> tuple:
     """
     Compute the 3x3 inter-group contact matrix from graph edges.
