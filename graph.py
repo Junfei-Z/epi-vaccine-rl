@@ -93,7 +93,7 @@ def build_graph_nlpa(
 
     groups = {'X': set(), 'Y': set(), 'Z': set()}
     for node in G.nodes():
-        if deg_dict[node] >= threshold:
+        if sigma > 0 and deg_dict[node] > threshold:
             groups['Z'].add(node)
         elif rng.random() <= high_risk_prob:
             groups['Y'].add(node)
@@ -143,7 +143,7 @@ def build_graph_and_groups(
 
     groups = {'X': set(), 'Y': set(), 'Z': set()}
     for node in G.nodes():
-        if deg_dict[node] >= threshold:
+        if sigma > 0 and deg_dict[node] > threshold:
             groups['Z'].add(node)
         elif rng.random() <= high_risk_prob:
             groups['Y'].add(node)
@@ -169,7 +169,7 @@ def _assign_groups(G, deg_dict, seed, high_risk_prob, alpha_std):
 
     groups = {'X': set(), 'Y': set(), 'Z': set()}
     for node in G.nodes():
-        if deg_dict[node] >= threshold:
+        if sigma > 0 and deg_dict[node] > threshold:
             groups['Z'].add(node)
         elif rng.random() <= high_risk_prob:
             groups['Y'].add(node)
