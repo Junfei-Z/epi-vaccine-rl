@@ -424,15 +424,18 @@ def run_training_node_rl(
         seed_counts=seed_counts, deterministic=False,
     )
 
-    policy   = NodeScoringPolicy(hidden=64)
+    policy    = NodeScoringPolicy(hidden=64)
     optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
     MSE       = torch.nn.MSELoss()
 
-    # buffer stores per-step (log_prob, reward, value, done)
-    buf_logp    = []
-    buf_rewards = []
-    buf_values  = []
-    buf_dones   = []
+    # Buffer stores numpy arrays — NO computational graph retained
+    # (g_state, node_feats, selected_idxs) allow recomputing log_prob at update time
+    buf_g_states  = []   # list of np.ndarray (global_dim,)
+    buf_feats     = []   # list of np.ndarray (n_s, node_feat_dim) or None
+    buf_sel_idxs  = []   # list of LongTensor (k,) — indices into node_feats
+    buf_old_logp  = []   # list of float — detached log_probs for IS ratio
+    buf_rewards   = []
+    buf_dones     = []
 
     best_death       = float('inf')
     best_state       = None
@@ -471,80 +474,99 @@ def run_training_node_rl(
         env.reset(seed_counts=seed_counts)
         done = False
 
-        ep_logp    = []
-        ep_rewards = []
-        ep_values  = []
-        ep_dones   = []
-
         while not done:
-            g_state = torch.from_numpy(env.obs_with_pressure()).float()
+            g_np    = env.obs_with_pressure()                 # numpy (34,)
+            g_state = torch.from_numpy(g_np).float()
             s_ids, feats = env.node_features()
 
             if len(s_ids) == 0:
                 _, reward, done, _ = env.step_node_ids([])
-                ep_logp.append(torch.tensor(0.0))
-                ep_rewards.append(reward)
-                ep_values.append(policy.value(g_state).squeeze())
-                ep_dones.append(float(done))
+                # store a no-op transition
+                buf_g_states.append(g_np)
+                buf_feats.append(None)
+                buf_sel_idxs.append(torch.tensor([], dtype=torch.long))
+                buf_old_logp.append(0.0)
+                buf_rewards.append(reward)
+                buf_dones.append(float(done))
                 continue
 
             f_t = torch.from_numpy(feats).float()
-            idxs, log_prob = policy.select(g_state, f_t, capacity_daily,
-                                           deterministic=False)
-            selected = [s_ids[i] for i in idxs.tolist()]
+            with torch.no_grad():
+                idxs, log_prob = policy.select(g_state, f_t, capacity_daily,
+                                               deterministic=False)
 
+            selected = [s_ids[i] for i in idxs.tolist()]
             _, reward, done, _ = env.step_node_ids(selected)
 
-            ep_logp.append(log_prob)
-            ep_rewards.append(reward)
-            ep_values.append(policy.value(g_state).squeeze())
-            ep_dones.append(float(done))
-
-        buf_logp.extend(ep_logp)
-        buf_rewards.extend(ep_rewards)
-        buf_values.extend(ep_values)
-        buf_dones.extend(ep_dones)
+            # store numpy / detached — no grad graph retained
+            buf_g_states.append(g_np)
+            buf_feats.append(feats)                           # numpy
+            buf_sel_idxs.append(idxs.detach())
+            buf_old_logp.append(float(log_prob.item()) if log_prob is not None else 0.0)
+            buf_rewards.append(reward)
+            buf_dones.append(float(done))
 
         # PPO update every episodes_per_update episodes
         if (ep + 1) % episodes_per_update == 0:
+            T        = len(buf_rewards)
             rewards  = torch.tensor(buf_rewards, dtype=torch.float32)
             dones    = torch.tensor(buf_dones,   dtype=torch.float32)
-            values   = torch.stack(buf_values).detach()
-            old_logp = torch.stack(buf_logp).detach()
+            old_logp = torch.tensor(buf_old_logp, dtype=torch.float32)
 
-            # GAE advantage
-            adv  = torch.zeros_like(rewards)
-            gae  = 0.0
+            # compute values with no_grad for GAE
+            with torch.no_grad():
+                values = torch.tensor([
+                    policy.value(
+                        torch.from_numpy(buf_g_states[t]).float()
+                    ).item()
+                    for t in range(T)
+                ], dtype=torch.float32)
+
             next_v = torch.cat([values[1:], torch.tensor([0.0])])
-            for t in reversed(range(len(rewards))):
+            adv    = torch.zeros(T, dtype=torch.float32)
+            gae    = 0.0
+            for t in reversed(range(T)):
                 delta  = rewards[t] + gamma * next_v[t] * (1 - dones[t]) - values[t]
                 gae    = delta + gamma * 0.95 * (1 - dones[t]) * gae
                 adv[t] = gae
-            returns = adv + values
+            returns = (adv + values).detach()
             if adv.std() > 1e-6:
                 adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+            adv = adv.detach()
 
-            # K gradient steps
+            # K gradient steps — recompute log_prob and value each time
             for _ in range(K_epochs):
-                # recompute log_probs requires re-running policy — use stored
-                # log_probs as proxy (single-step PPO without re-scoring batch)
-                ratios = torch.exp(
-                    torch.stack(buf_logp) - old_logp
-                ).detach()   # treat as IS weights (approx PPO)
+                logps  = []
+                v_preds = []
+                for t in range(T):
+                    g_t = torch.from_numpy(buf_g_states[t]).float()
+                    v_preds.append(policy.value(g_t).squeeze())
 
-                surr1 = ratios * adv
-                surr2 = torch.clamp(ratios, 1 - eps_clip, 1 + eps_clip) * adv
-                v_pred = torch.stack(buf_values).squeeze()
+                    if buf_feats[t] is None or len(buf_sel_idxs[t]) == 0:
+                        logps.append(torch.tensor(0.0))
+                        continue
+
+                    f_t    = torch.from_numpy(buf_feats[t]).float()
+                    scores = policy.score(g_t, f_t)
+                    lp     = torch.log_softmax(scores, dim=0)
+                    logps.append(lp[buf_sel_idxs[t]].sum())
+
+                logps   = torch.stack(logps)
+                v_preds = torch.stack(v_preds).squeeze()
+
+                ratios = torch.exp(logps - old_logp)
+                surr1  = ratios * adv
+                surr2  = torch.clamp(ratios, 1 - eps_clip, 1 + eps_clip) * adv
 
                 loss = (-torch.min(surr1, surr2)
-                        + 0.5 * MSE(v_pred, returns)).mean()
+                        + 0.5 * MSE(v_preds, returns)).mean()
                 optimizer.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(policy.parameters(), 0.5)
                 optimizer.step()
 
-            buf_logp.clear(); buf_rewards.clear()
-            buf_values.clear(); buf_dones.clear()
+            buf_g_states.clear(); buf_feats.clear(); buf_sel_idxs.clear()
+            buf_old_logp.clear(); buf_rewards.clear(); buf_dones.clear()
 
             eval_deaths = eval_det(n_eval=3)
             hist_eval.append(eval_deaths)

@@ -46,7 +46,11 @@ def run_node_rl_experiment(
     params      = PARAMS_NODE_RL
     tag         = 'node_exp'
     capacity    = params['V_MAX_DAILY']
-    seed_counts = {1: params['INITIAL_INFECTED'], 2: 0, 3: 0}
+    seed_counts = {
+        1: int(params.get('INIT_INFECTED_X', params['INITIAL_INFECTED'])),
+        2: int(params.get('INIT_INFECTED_Y', 0)),
+        3: int(params.get('INIT_INFECTED_Z', 0)),
+    }
 
     # ------------------------------------------------------------------ #
     # Build graph                                                          #
