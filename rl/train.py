@@ -379,9 +379,27 @@ def run_training_node_rl(
     seed_counts: dict = None,
     label: str = None,
     out_dir: str = '.',
+    # --- warm-start parameters ---
+    doses_seq: np.ndarray = None,
+    bc_epochs: int = 50,
+    bc_lr: float = 1e-3,
+    bc_teacher_episodes: int = 5,
+    priority_order: list = None,
 ) -> tuple:
     """
-    Train a NodeScoringPolicy via PPO.
+    Train a NodeScoringPolicy via PPO, optionally warm-started from ODE.
+
+    Warm-start (doses_seq provided)
+    --------------------------------
+    1. Generate OC teacher trajectories by rolling ODE doses through the env
+    2. Pre-train the scorer via behavioral cloning (cross-entropy on node
+       selections) for bc_epochs passes
+    3. Then proceed with standard PPO training — the scorer starts near the
+       OC solution but is free to improve using real-time node features
+
+    Cold-start (doses_seq=None)
+    ---------------------------
+    Standard PPO from random initialisation.
 
     At each step the policy:
       1. Receives 34-dim global state (group aggregates + 3 pressure features)
@@ -410,6 +428,11 @@ def run_training_node_rl(
     seed_counts         : initial infection counts per group
     label               : if given, save best policy to out_dir
     out_dir             : directory for saved model files
+    doses_seq           : np.ndarray (T,3) ODE doses for warm-start, or None
+    bc_epochs           : behavioral cloning epochs (warm-start only)
+    bc_lr               : behavioral cloning learning rate
+    bc_teacher_episodes : number of teacher trajectories to generate
+    priority_order      : group priority order for OC, default [3,2,1]
 
     Returns
     -------
@@ -425,6 +448,30 @@ def run_training_node_rl(
     )
 
     policy    = NodeScoringPolicy(hidden=64)
+
+    # --- Warm-start: behavioral cloning from OC teacher ---
+    if doses_seq is not None:
+        from warm_start import generate_oc_teacher_trajectory, behavioral_cloning
+
+        print("[node_rl] Generating OC teacher trajectories ...")
+        all_traj = []
+        for i in range(bc_teacher_episodes):
+            traj = generate_oc_teacher_trajectory(
+                G=G, groups=groups, deg_dict=deg_dict,
+                params_global=params_global, capacity_daily=capacity_daily,
+                doses_seq=doses_seq, seed_counts=seed_counts,
+                priority_order=priority_order or [3, 2, 1],
+            )
+            all_traj.extend(traj)
+        print(f"[node_rl] Collected {len(all_traj)} teacher steps "
+              f"from {bc_teacher_episodes} trajectories")
+
+        print(f"[node_rl] Running behavioral cloning ({bc_epochs} epochs) ...")
+        bc_losses = behavioral_cloning(
+            policy, all_traj, n_epochs=bc_epochs, lr=bc_lr,
+        )
+        if bc_losses:
+            print(f"[node_rl] BC done — final loss={bc_losses[-1]:.4f}")
     optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
     MSE       = torch.nn.MSELoss()
 
