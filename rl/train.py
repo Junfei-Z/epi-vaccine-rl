@@ -381,21 +381,19 @@ def run_training_node_rl(
     out_dir: str = '.',
     # --- warm-start parameters ---
     doses_seq: np.ndarray = None,
-    bc_epochs: int = 50,
-    bc_lr: float = 1e-3,
-    bc_teacher_episodes: int = 5,
-    priority_order: list = None,
+    bias_strength: float = 2.0,
+    bias_decay_episodes: int = 50,
 ) -> tuple:
     """
     Train a NodeScoringPolicy via PPO, optionally warm-started from ODE.
 
     Warm-start (doses_seq provided)
     --------------------------------
-    1. Generate OC teacher trajectories by rolling ODE doses through the env
-    2. Pre-train the scorer via behavioral cloning (cross-entropy on node
-       selections) for bc_epochs passes
-    3. Then proceed with standard PPO training — the scorer starts near the
-       OC solution but is free to improve using real-time node features
+    Compute OC's average group allocation shares and add a decaying score
+    bias to nodes of higher-priority groups during early episodes.
+    The bias linearly decays to 0 over bias_decay_episodes, after which
+    the policy explores freely. This gives RL a soft initial direction
+    without constraining the scorer's learned representation.
 
     Cold-start (doses_seq=None)
     ---------------------------
@@ -429,10 +427,8 @@ def run_training_node_rl(
     label               : if given, save best policy to out_dir
     out_dir             : directory for saved model files
     doses_seq           : np.ndarray (T,3) ODE doses for warm-start, or None
-    bc_epochs           : behavioral cloning epochs (warm-start only)
-    bc_lr               : behavioral cloning learning rate
-    bc_teacher_episodes : number of teacher trajectories to generate
-    priority_order      : group priority order for OC, default [3,2,1]
+    bias_strength       : initial score bonus scale (warm-start only)
+    bias_decay_episodes : episodes over which bias decays to 0
 
     Returns
     -------
@@ -449,29 +445,22 @@ def run_training_node_rl(
 
     policy    = NodeScoringPolicy(hidden=64)
 
-    # --- Warm-start: behavioral cloning from OC teacher ---
+    # --- Warm-start: compute group score bias from OC allocation ---
+    # OC's average allocation shares tell us which groups to prioritise.
+    # We add a decaying score bonus to nodes of higher-priority groups
+    # during early episodes, letting the scorer learn freely afterward.
+    oc_group_bias = None          # (3,) tensor: bias per group [X, Y, Z]
+    bias_scale_init = 0.0         # initial multiplier (0 = no bias)
     if doses_seq is not None:
-        from warm_start import generate_oc_teacher_trajectory, behavioral_cloning
+        avg_shares = doses_seq.sum(axis=0).astype(float)
+        avg_shares = avg_shares / max(avg_shares.sum(), 1e-8)
+        oc_group_bias = torch.tensor(avg_shares, dtype=torch.float32)
+        bias_scale_init = bias_strength
+        print(f"[node_rl] OC group bias: X={avg_shares[0]:.3f} "
+              f"Y={avg_shares[1]:.3f} Z={avg_shares[2]:.3f}  "
+              f"(init scale={bias_scale_init:.1f}, "
+              f"decay over {bias_decay_episodes} episodes)")
 
-        print("[node_rl] Generating OC teacher trajectories ...")
-        all_traj = []
-        for i in range(bc_teacher_episodes):
-            traj = generate_oc_teacher_trajectory(
-                G=G, groups=groups, deg_dict=deg_dict,
-                params_global=params_global, capacity_daily=capacity_daily,
-                doses_seq=doses_seq, seed_counts=seed_counts,
-                priority_order=priority_order or [3, 2, 1],
-            )
-            all_traj.extend(traj)
-        print(f"[node_rl] Collected {len(all_traj)} teacher steps "
-              f"from {bc_teacher_episodes} trajectories")
-
-        print(f"[node_rl] Running behavioral cloning ({bc_epochs} epochs) ...")
-        bc_losses = behavioral_cloning(
-            policy, all_traj, n_epochs=bc_epochs, lr=bc_lr,
-        )
-        if bc_losses:
-            print(f"[node_rl] BC done — final loss={bc_losses[-1]:.4f}")
     optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
     MSE       = torch.nn.MSELoss()
 
@@ -521,6 +510,12 @@ def run_training_node_rl(
         env.reset(seed_counts=seed_counts)
         done = False
 
+        # compute decaying bias scale for this episode
+        if oc_group_bias is not None and ep < bias_decay_episodes:
+            cur_bias_scale = bias_scale_init * (1.0 - ep / bias_decay_episodes)
+        else:
+            cur_bias_scale = 0.0
+
         while not done:
             g_np    = env.obs_with_pressure()                 # numpy (34,)
             g_state = torch.from_numpy(g_np).float()
@@ -538,9 +533,18 @@ def run_training_node_rl(
                 continue
 
             f_t = torch.from_numpy(feats).float()
+
+            # build per-node score bias from OC group priorities
+            # node_feats columns 2,3,4 are group one-hot [gX, gY, gZ]
+            sb = None
+            if cur_bias_scale > 0 and oc_group_bias is not None:
+                group_onehot = f_t[:, 2:5]                    # (n, 3)
+                sb = (group_onehot @ oc_group_bias) * cur_bias_scale  # (n,)
+
             with torch.no_grad():
                 idxs, log_prob = policy.select(g_state, f_t, capacity_daily,
-                                               deterministic=False)
+                                               deterministic=False,
+                                               score_bias=sb)
 
             selected = [s_ids[i] for i in idxs.tolist()]
             _, reward, done, _ = env.step_node_ids(selected)

@@ -61,17 +61,19 @@ def run_warm_node_rl_experiment(
     out_dir: str = 'results/warm_node_rl',
     n_eval: int = 10,
     max_episodes_node: int = 300,
-    bc_epochs: int = 50,
+    bias_strength: float = 2.0,
+    bias_decay_episodes: int = 50,
 ) -> pd.DataFrame:
     """
     Run the four-way comparison experiment.
 
     Parameters
     ----------
-    out_dir           : directory for saved models and CSV
-    n_eval            : stochastic evaluation episodes per method
-    max_episodes_node : max PPO episodes for node RL methods
-    bc_epochs         : behavioral cloning epochs for warm-start
+    out_dir             : directory for saved models and CSV
+    n_eval              : stochastic evaluation episodes per method
+    max_episodes_node   : max PPO episodes for node RL methods
+    bias_strength       : initial OC score bias scale for warm-start
+    bias_decay_episodes : episodes over which bias decays to 0
 
     Returns
     -------
@@ -149,12 +151,10 @@ def run_warm_node_rl_experiment(
         max_episodes=max_episodes_node,
         seed_counts=seed_counts,
         label='warm', out_dir=out_dir,
-        # warm-start parameters
+        # warm-start: OC score bias
         doses_seq=doses_seq,
-        bc_epochs=bc_epochs,
-        bc_lr=1e-3,
-        bc_teacher_episodes=5,
-        priority_order=[3, 2, 1],
+        bias_strength=bias_strength,
+        bias_decay_episodes=bias_decay_episodes,
     )
 
     warm_deaths = eval_node_policy(

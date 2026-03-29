@@ -97,6 +97,7 @@ class NodeScoringPolicy(nn.Module):
         node_feats: torch.Tensor,
         k: int,
         deterministic: bool = False,
+        score_bias: torch.Tensor = None,
     ) -> tuple:
         """
         Select k nodes to vaccinate and return their indices + log-prob.
@@ -111,6 +112,10 @@ class NodeScoringPolicy(nn.Module):
         node_feats    : Tensor (n_susceptible, node_feat_dim)
         k             : number of nodes to select (V_MAX_DAILY)
         deterministic : if True, greedy top-k; else Gumbel-top-k sampling
+        score_bias    : Tensor (n_susceptible,) or None — additive bias from
+                        OC warm-start, applied to scores before selection but
+                        NOT included in log-prob computation (so PPO ratios
+                        stay correct as the bias decays)
 
         Returns
         -------
@@ -124,16 +129,19 @@ class NodeScoringPolicy(nn.Module):
 
         scores = self.score(global_state, node_feats)   # (n,)
 
+        # biased scores for selection; unbiased scores for log-prob
+        biased = scores + score_bias if score_bias is not None else scores
+
         if deterministic:
-            indices = torch.topk(scores, k).indices
+            indices = torch.topk(biased, k).indices
             return indices, None
 
         # Gumbel-top-k: add Gumbel noise then take top-k
-        gumbel = -torch.log(-torch.log(torch.rand_like(scores) + 1e-10) + 1e-10)
-        perturbed = scores + gumbel
+        gumbel = -torch.log(-torch.log(torch.rand_like(biased) + 1e-10) + 1e-10)
+        perturbed = biased + gumbel
         indices   = torch.topk(perturbed, k).indices
 
-        # log-prob ≈ sum of log-softmax scores for selected nodes
+        # log-prob uses unbiased scores so PPO ratios remain correct
         log_probs = torch.log_softmax(scores, dim=0)
         log_prob  = log_probs[indices].sum()
 
