@@ -13,6 +13,7 @@ allocate to groups X, Y, Z.
 
 import math
 import numpy as np
+import networkx as nx
 
 from config import S, E, P, A, I, L, H, R, V, D
 from graph import get_contact_matrix
@@ -89,6 +90,17 @@ class EpidemicNodeEnv:
             for g in self.groups
         }
 
+        # precomputed arrays for vectorized operations
+        self._np_group_nodes = {
+            g: np.array(self.group_nodes[g], dtype=np.intp)
+            for g in self.groups
+        }
+        self._adj = nx.adjacency_matrix(self.G)          # sparse CSR (N, N)
+        self._deg_arr = np.array(
+            [self.deg.get(i, 0) for i in range(self.N)], dtype=np.float64,
+        )
+        self._max_deg = max(self.deg.values()) if self.deg else 1
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -116,11 +128,133 @@ class EpidemicNodeEnv:
         """Return (3, 10) int array: compartment counts per group."""
         res = np.zeros((3, 10), dtype=np.int32)
         for g in self.groups:
-            node_ids = self.group_nodes[g]
-            vals     = self.status[node_ids]
-            for state in range(10):
-                res[g - 1, state] = np.sum(vals == state)
+            vals = self.status[self._np_group_nodes[g]]
+            counts = np.bincount(vals, minlength=10)
+            res[g - 1] = counts[:10]
         return res
+
+    def _comp_counts_from(self, cur: np.ndarray) -> np.ndarray:
+        """Return (3, 10) float array: compartment counts per group from given state."""
+        comp = np.zeros((3, 10), dtype=float)
+        for g in self.groups:
+            vals = cur[self._np_group_nodes[g]]
+            counts = np.bincount(vals.astype(np.intp), minlength=10)
+            comp[g - 1] = counts[:10]
+        return comp
+
+    def _compute_lam(self, comp: np.ndarray) -> np.ndarray:
+        """Compute force-of-infection lambda (3,) from compartment counts (3,10)."""
+        wA = self.params['wA']; wP = self.params['wP']; wI = self.params['wI']
+        Ic = np.array(
+            [wA*comp[i, A] + wP*comp[i, P] + wI*comp[i, I] for i in range(3)],
+            dtype=float,
+        )
+        beta = np.array(
+            [self.params[1]['beta'], self.params[2]['beta'], self.params[3]['beta']],
+            dtype=float,
+        )
+        frac = Ic / np.maximum(self.Ng, 1.0)
+        return np.array(
+            [beta[i] * np.dot(self.C[i], frac) for i in range(3)], dtype=float,
+        )
+
+    def _stochastic_substep_vec(self, cur: np.ndarray, lam: np.ndarray) -> np.ndarray:
+        """Vectorized stochastic disease progression for one substep.
+
+        Same logic as the original per-node loop but uses numpy batch
+        operations: all random draws for nodes in the same compartment
+        are generated at once.
+        """
+        next_state = cur.copy()
+
+        for g in self.groups:
+            gi    = g - 1
+            lam_g = lam[gi]
+            eps_v = self.params[g].get('epsilon', 0.5)
+            tauE  = self.params[g]['tauE']; tauP = self.params[g]['tauP']
+            tauA  = self.params[g]['tauA']; tauI = self.params[g]['tauI']
+            tauL  = self.params[g]['tauL']; tauH = self.params[g]['tauH']
+            sprob = self.params[g]['s']
+            pprob = self.params[g]['p']
+            dprob = self.params[g]['d']
+
+            nodes   = self._np_group_nodes[g]
+            states  = cur[nodes]
+
+            # S → E
+            mask = states == S
+            n = mask.sum()
+            if n > 0:
+                prob = 1.0 - math.exp(-lam_g * self.dt)
+                trans = self.rng.random(n) < prob
+                next_state[nodes[mask][trans]] = E
+
+            # V → E
+            mask = states == V
+            n = mask.sum()
+            if n > 0:
+                prob = 1.0 - math.exp(-lam_g * (1.0 - eps_v) * self.dt)
+                trans = self.rng.random(n) < prob
+                next_state[nodes[mask][trans]] = E
+
+            # E → P
+            mask = states == E
+            n = mask.sum()
+            if n > 0:
+                prob = 1.0 - math.exp(-tauE * self.dt)
+                trans = self.rng.random(n) < prob
+                next_state[nodes[mask][trans]] = P
+
+            # P → I (symptomatic) or A (asymptomatic)
+            mask = states == P
+            n = mask.sum()
+            if n > 0:
+                prob_exit = 1.0 - math.exp(-tauP * self.dt)
+                exits = self.rng.random(n) < prob_exit
+                symp  = self.rng.random(n) < sprob
+                p_nodes    = nodes[mask]
+                exit_nodes = p_nodes[exits]
+                next_state[exit_nodes] = np.where(symp[exits], I, A)
+
+            # A → R
+            mask = states == A
+            n = mask.sum()
+            if n > 0:
+                prob = 1.0 - math.exp(-tauA * self.dt)
+                trans = self.rng.random(n) < prob
+                next_state[nodes[mask][trans]] = R
+
+            # I → L
+            mask = states == I
+            n = mask.sum()
+            if n > 0:
+                prob = 1.0 - math.exp(-tauI * self.dt)
+                trans = self.rng.random(n) < prob
+                next_state[nodes[mask][trans]] = L
+
+            # L → H (hospitalised) or R (recovered)
+            mask = states == L
+            n = mask.sum()
+            if n > 0:
+                prob_exit = 1.0 - math.exp(-tauL * self.dt)
+                exits = self.rng.random(n) < prob_exit
+                hosp  = self.rng.random(n) < pprob
+                l_nodes    = nodes[mask]
+                exit_nodes = l_nodes[exits]
+                next_state[exit_nodes] = np.where(hosp[exits], H, R)
+
+            # H → D (dead) or R (recovered)
+            mask = states == H
+            n = mask.sum()
+            if n > 0:
+                prob_exit = 1.0 - math.exp(-tauH * self.dt)
+                exits = self.rng.random(n) < prob_exit
+                die   = self.rng.random(n) < dprob
+                h_nodes    = nodes[mask]
+                exit_nodes = h_nodes[exits]
+                next_state[exit_nodes] = np.where(die[exits], D, R)
+
+        return next_state
 
     def _obs(self) -> np.ndarray:
         """
@@ -143,19 +277,19 @@ class EpidemicNodeEnv:
         -------
         pressure : np.ndarray of shape (3,), values in [0, 1]
         """
-        infectious_states = {P, A, I}
+        # sparse matrix–vector multiply: count infectious neighbours per node
+        inf_mask = np.isin(self.status, [P, A, I]).astype(np.float64)
+        inf_nbr_counts = np.asarray(self._adj.dot(inf_mask)).ravel()
+
         pressure = np.zeros(3, dtype=np.float32)
         for gi, g in enumerate(self.groups):
-            s_nodes = [n for n in self.group_nodes[g] if self.status[n] == S]
-            if len(s_nodes) == 0:
-                pressure[gi] = 0.0
+            nodes   = self._np_group_nodes[g]
+            s_mask  = self.status[nodes] == S
+            n_s     = s_mask.sum()
+            if n_s == 0:
                 continue
-            at_risk = sum(
-                1 for n in s_nodes
-                if any(self.status[nb] in infectious_states
-                       for nb in self.G.neighbors(n))
-            )
-            pressure[gi] = at_risk / len(s_nodes)
+            at_risk = np.sum(inf_nbr_counts[nodes[s_mask]] > 0)
+            pressure[gi] = at_risk / n_s
         return pressure
 
     def obs_with_pressure(self) -> np.ndarray:
@@ -182,37 +316,40 @@ class EpidemicNodeEnv:
         s_node_ids : list of int — node ids of susceptible nodes
         feats      : np.ndarray (n_susceptible, 6)
         """
-        infectious_states = {P, A, I}
-        max_deg = max(self.deg.values()) if self.deg else 1
-
-        s_node_ids = []
-        rows = []
         T = self.params.get('T_HORIZON', 60)
         day_norm = float(self.day) / float(T)
 
-        for g, label in zip(self.groups, ['X', 'Y', 'Z']):
-            gX = float(label == 'X')
-            gY = float(label == 'Y')
-            gZ = float(label == 'Z')
-            for n in self.group_nodes[g]:
-                if self.status[n] != S:
-                    continue
-                deg_i = max(self.deg[n], 1)
-                inf_nbrs = sum(
-                    1 for nb in self.G.neighbors(n)
-                    if self.status[nb] in infectious_states
-                )
-                rows.append([
-                    deg_i / max_deg,
-                    inf_nbrs / deg_i,
-                    gX, gY, gZ,
-                    day_norm,
-                ])
-                s_node_ids.append(n)
+        # infectious neighbour counts via sparse matrix multiply
+        inf_mask = np.isin(self.status, [P, A, I]).astype(np.float64)
+        inf_nbr_counts = np.asarray(self._adj.dot(inf_mask)).ravel()
 
-        if len(rows) == 0:
+        # collect susceptible nodes group by group (preserves original ordering)
+        s_node_ids = []
+        group_labels = []       # 0=X, 1=Y, 2=Z per collected node
+        for gi, g in enumerate(self.groups):
+            nodes  = self._np_group_nodes[g]
+            s_mask = self.status[nodes] == S
+            s_nodes = nodes[s_mask]
+            s_node_ids.extend(s_nodes.tolist())
+            group_labels.extend([gi] * len(s_nodes))
+
+        if len(s_node_ids) == 0:
             return [], np.zeros((0, 6), dtype=np.float32)
-        return s_node_ids, np.array(rows, dtype=np.float32)
+
+        ids   = np.array(s_node_ids, dtype=np.intp)
+        n_s   = len(ids)
+        degs  = np.maximum(self._deg_arr[ids], 1.0)
+        feats = np.empty((n_s, 6), dtype=np.float32)
+        feats[:, 0] = degs / self._max_deg
+        feats[:, 1] = inf_nbr_counts[ids] / degs
+        # group one-hot
+        gl = np.array(group_labels, dtype=np.intp)
+        feats[:, 2] = (gl == 0).astype(np.float32)
+        feats[:, 3] = (gl == 1).astype(np.float32)
+        feats[:, 4] = (gl == 2).astype(np.float32)
+        feats[:, 5] = day_norm
+
+        return s_node_ids, feats
 
     def step_node_ids(self, node_ids: list) -> tuple:
         """
@@ -251,69 +388,12 @@ class EpidemicNodeEnv:
 
         unused = max(0, self.V_MAX - actual_vaccinated)
 
-        # --- disease progression (reuse existing substep logic) ---
+        # --- disease progression (vectorized) ---
         cur = self.status.copy()
         for _ in range(self.substeps):
-            comp = np.zeros((3, 10), dtype=float)
-            for g in self.groups:
-                node_ids_g = self.group_nodes[g]
-                vals       = cur[node_ids_g]
-                for state in range(10):
-                    comp[g - 1, state] = np.sum(vals == state)
-
-            wA = self.params['wA']; wP = self.params['wP']; wI = self.params['wI']
-            Ic   = np.array(
-                [wA*comp[i, A] + wP*comp[i, P] + wI*comp[i, I] for i in range(3)],
-                dtype=float,
-            )
-            beta = np.array(
-                [self.params[1]['beta'], self.params[2]['beta'], self.params[3]['beta']],
-                dtype=float,
-            )
-            frac = Ic / np.maximum(self.Ng, 1.0)
-            lam  = np.array(
-                [beta[i] * np.dot(self.C[i], frac) for i in range(3)],
-                dtype=float,
-            )
-
-            next_state = cur.copy()
-            for g in self.groups:
-                lam_g = lam[g - 1]
-                eps   = self.params[g].get('epsilon', 0.5)
-                tauE  = self.params[g]['tauE']; tauP = self.params[g]['tauP']
-                tauA  = self.params[g]['tauA']; tauI = self.params[g]['tauI']
-                tauL  = self.params[g]['tauL']; tauH = self.params[g]['tauH']
-                sprob = self.params[g]['s']
-                pprob = self.params[g]['p']
-                dprob = self.params[g]['d']
-
-                for node in self.group_nodes[g]:
-                    state = cur[node]
-                    if state == S:
-                        if self.rng.random() < 1.0 - math.exp(-lam_g * self.dt):
-                            next_state[node] = E
-                    elif state == V:
-                        if self.rng.random() < 1.0 - math.exp(-lam_g * (1.0 - eps) * self.dt):
-                            next_state[node] = E
-                    elif state == E:
-                        if self.rng.random() < 1.0 - math.exp(-tauE * self.dt):
-                            next_state[node] = P
-                    elif state == P:
-                        if self.rng.random() < 1.0 - math.exp(-tauP * self.dt):
-                            next_state[node] = I if self.rng.random() < sprob else A
-                    elif state == A:
-                        if self.rng.random() < 1.0 - math.exp(-tauA * self.dt):
-                            next_state[node] = R
-                    elif state == I:
-                        if self.rng.random() < 1.0 - math.exp(-tauI * self.dt):
-                            next_state[node] = L
-                    elif state == L:
-                        if self.rng.random() < 1.0 - math.exp(-tauL * self.dt):
-                            next_state[node] = H if self.rng.random() < pprob else R
-                    elif state == H:
-                        if self.rng.random() < 1.0 - math.exp(-tauH * self.dt):
-                            next_state[node] = D if self.rng.random() < dprob else R
-            cur = next_state
+            comp = self._comp_counts_from(cur)
+            lam  = self._compute_lam(comp)
+            cur  = self._stochastic_substep_vec(cur, lam)
 
         self.status = cur
 
@@ -481,71 +561,14 @@ class EpidemicNodeEnv:
         # --- disease progression (substeps) ---
         cur = self.status.copy()
         for _ in range(self.substeps):
-            # recompute compartment counts & lambda at each substep
-            comp = np.zeros((3, 10), dtype=float)
-            for g in self.groups:
-                node_ids = self.group_nodes[g]
-                vals     = cur[node_ids]
-                for state in range(10):
-                    comp[g - 1, state] = np.sum(vals == state)
-
-            wA = self.params['wA']; wP = self.params['wP']; wI = self.params['wI']
-            Ic  = np.array(
-                [wA*comp[i, A] + wP*comp[i, P] + wI*comp[i, I] for i in range(3)],
-                dtype=float,
-            )
-            beta = np.array(
-                [self.params[1]['beta'], self.params[2]['beta'], self.params[3]['beta']],
-                dtype=float,
-            )
-            frac = Ic / np.maximum(self.Ng, 1.0)
-            lam  = np.array(
-                [beta[i] * np.dot(self.C[i], frac) for i in range(3)],
-                dtype=float,
-            )
-
-            next_state = cur.copy()
+            comp = self._comp_counts_from(cur)
+            lam  = self._compute_lam(comp)
 
             if not self.deterministic:
-                # stochastic: individual Bernoulli transitions
-                for g in self.groups:
-                    lam_g = lam[g - 1]
-                    eps   = self.params[g].get('epsilon', 0.5)
-                    tauE  = self.params[g]['tauE']; tauP = self.params[g]['tauP']
-                    tauA  = self.params[g]['tauA']; tauI = self.params[g]['tauI']
-                    tauL  = self.params[g]['tauL']; tauH = self.params[g]['tauH']
-                    sprob = self.params[g]['s']
-                    pprob = self.params[g]['p']
-                    dprob = self.params[g]['d']
-
-                    for node in self.group_nodes[g]:
-                        state = cur[node]
-                        if state == S:
-                            if self.rng.random() < 1.0 - math.exp(-lam_g * self.dt):
-                                next_state[node] = E
-                        elif state == V:
-                            if self.rng.random() < 1.0 - math.exp(-lam_g * (1.0 - eps) * self.dt):
-                                next_state[node] = E
-                        elif state == E:
-                            if self.rng.random() < 1.0 - math.exp(-tauE * self.dt):
-                                next_state[node] = P
-                        elif state == P:
-                            if self.rng.random() < 1.0 - math.exp(-tauP * self.dt):
-                                next_state[node] = I if self.rng.random() < sprob else A
-                        elif state == A:
-                            if self.rng.random() < 1.0 - math.exp(-tauA * self.dt):
-                                next_state[node] = R
-                        elif state == I:
-                            if self.rng.random() < 1.0 - math.exp(-tauI * self.dt):
-                                next_state[node] = L
-                        elif state == L:
-                            if self.rng.random() < 1.0 - math.exp(-tauL * self.dt):
-                                next_state[node] = H if self.rng.random() < pprob else R
-                        elif state == H:
-                            if self.rng.random() < 1.0 - math.exp(-tauH * self.dt):
-                                next_state[node] = D if self.rng.random() < dprob else R
+                cur = self._stochastic_substep_vec(cur, lam)
             else:
                 # deterministic: move expected number of nodes per transition
+                next_state = cur.copy()
                 for g in self.groups:
                     lam_g = lam[g - 1]
                     eps   = self.params[g].get('epsilon', 0.5)
@@ -589,7 +612,7 @@ class EpidemicNodeEnv:
                     self._move_k(next_state, g, H, D, k_HD)
                     self._move_k(next_state, g, H, R, k_Hexit - k_HD)
 
-            cur = next_state
+                cur = next_state
 
         self.status = cur
 
