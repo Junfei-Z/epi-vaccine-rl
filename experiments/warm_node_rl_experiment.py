@@ -12,7 +12,9 @@ Key question: does OC warm-start help node-level RL converge faster and
 reach a better final policy than cold-start node RL?
 """
 
-import os
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 import numpy as np
 import pandas as pd
 import torch
@@ -23,22 +25,30 @@ from ode_solver import solve, allocations_from_solution
 from allocation import strict_priority_window_fill, cap_to_capacity
 from env import make_env_from_graph
 from prior import build_feasible_prior_from_doses
-from simulate import simulate_with_ode_doses
 from rl.train import run_training, run_training_node_rl
 
 
+def _make_stochastic_env(G, groups, deg_dict, params_global,
+                         capacity, seed_counts, rng_seed):
+    """Create a stochastic env with a specific RNG seed for fair comparison."""
+    env, _, _, _, _ = make_env_from_graph(
+        G=G, groups=groups, deg_dict=deg_dict,
+        params_global=params_global, capacity_daily=capacity,
+        seed_counts=seed_counts, deterministic=False,
+    )
+    env.rng = np.random.default_rng(rng_seed)
+    env.reset(seed_counts=seed_counts)
+    return env
+
+
 def eval_node_policy(policy, G, groups, deg_dict, params_global,
-                     capacity, seed_counts, n_eval=5):
-    """Evaluate a NodeScoringPolicy over n_eval stochastic episodes."""
+                     capacity, seed_counts, n_eval=10):
+    """Evaluate a NodeScoringPolicy over n_eval stochastic episodes with different seeds."""
     deaths = []
     policy.eval()
-    for _ in range(n_eval):
-        env, _, _, _, _ = make_env_from_graph(
-            G=G, groups=groups, deg_dict=deg_dict,
-            params_global=params_global, capacity_daily=capacity,
-            seed_counts=seed_counts, deterministic=False,
-        )
-        env.reset(seed_counts=seed_counts)
+    for i in range(n_eval):
+        env = _make_stochastic_env(G, groups, deg_dict, params_global,
+                                   capacity, seed_counts, rng_seed=2000 + i)
         done = False
         while not done:
             g_state = torch.from_numpy(env.obs_with_pressure()).float()
@@ -54,6 +64,28 @@ def eval_node_policy(policy, G, groups, deg_dict, params_global,
             _, _, done, _ = env.step_node_ids(selected)
         deaths.append(int(np.sum(env.status == D)))
     policy.train()
+    return deaths
+
+
+def eval_oc_stochastic(G, groups, deg_dict, params_global, capacity,
+                       seed_counts, doses_seq, n_eval=10):
+    """Evaluate OC-Guided using the SAME stochastic dynamics as RL."""
+    from allocation import allocate_by_priority
+    from simulate import vaccinate_by_priority
+
+    deaths = []
+    T = len(doses_seq)
+    for i in range(n_eval):
+        env = _make_stochastic_env(G, groups, deg_dict, params_global,
+                                   capacity, seed_counts, rng_seed=2000 + i)
+        for t in range(T):
+            # apply OC doses via env.step (uses stochastic disease progression)
+            total = max(1, int(doses_seq[t].sum()))
+            shares = doses_seq[t].astype(float) / total
+            _, _, done, _ = env.step(shares)
+            if done:
+                break
+        deaths.append(int(np.sum(env.status == D)))
     return deaths
 
 
@@ -108,19 +140,11 @@ def run_warm_node_rl_experiment(
     ax, ay, az = cap_to_capacity(ax, ay, az, capacity)
     doses_seq  = np.stack([ax, ay, az], axis=1)
 
-    oc_deaths = []
-    for _ in range(n_eval):
-        env_oc, _, _, _, _ = make_env_from_graph(
-            G=G, groups=groups, deg_dict=deg_dict,
-            params_global=params_global, capacity_daily=capacity,
-            seed_counts=seed_counts, deterministic=False,
-        )
-        env_oc.reset(seed_counts=seed_counts)
-        _, _, d = simulate_with_ode_doses(
-            env_oc, doses_seq, priority_order=[3, 2, 1],
-            seed_counts=seed_counts,
-        )
-        oc_deaths.append(d)
+    # Fair stochastic evaluation: same RNG seeds for all methods
+    oc_deaths = eval_oc_stochastic(
+        G, groups, deg_dict, params_global, capacity,
+        seed_counts, doses_seq, n_eval=n_eval,
+    )
     print(f"[warm_exp] OC-Guided:  {np.mean(oc_deaths):.1f} +/- {np.std(oc_deaths):.1f}")
 
     # ------------------------------------------------------------------ #
@@ -184,13 +208,10 @@ def run_warm_node_rl_experiment(
     )
 
     group_deaths = []
-    for _ in range(n_eval):
-        env_g, _, _, _, _ = make_env_from_graph(
-            G=G, groups=groups, deg_dict=deg_dict,
-            params_global=params_global, capacity_daily=capacity,
-            seed_counts=seed_counts, deterministic=False,
-        )
-        state = env_g.reset(seed_counts=seed_counts)
+    for i in range(n_eval):
+        env_g = _make_stochastic_env(G, groups, deg_dict, params_global,
+                                     capacity, seed_counts, rng_seed=2000 + i)
+        state = env_g._obs()
         done = False
         while not done:
             with torch.no_grad():

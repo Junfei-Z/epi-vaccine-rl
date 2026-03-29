@@ -383,6 +383,8 @@ def run_training_node_rl(
     doses_seq: np.ndarray = None,
     bias_strength: float = 2.0,
     bias_decay_episodes: int = 50,
+    # --- terminal reward ---
+    terminal_reward_scale: float = 0.0,
 ) -> tuple:
     """
     Train a NodeScoringPolicy via PPO, optionally warm-started from ODE.
@@ -429,6 +431,9 @@ def run_training_node_rl(
     doses_seq           : np.ndarray (T,3) ODE doses for warm-start, or None
     bias_strength       : initial score bonus scale (warm-start only)
     bias_decay_episodes : episodes over which bias decays to 0
+    terminal_reward_scale : at episode end, add -total_deaths * scale to reward
+                            (0 = off). Aligns RL objective with global D(T)
+                            minimisation rather than per-step myopic deaths.
 
     Returns
     -------
@@ -445,21 +450,25 @@ def run_training_node_rl(
 
     policy    = NodeScoringPolicy(hidden=64)
 
-    # --- Warm-start: compute group score bias from OC allocation ---
-    # OC's average allocation shares tell us which groups to prioritise.
-    # We add a decaying score bonus to nodes of higher-priority groups
-    # during early episodes, letting the scorer learn freely afterward.
-    oc_group_bias = None          # (3,) tensor: bias per group [X, Y, Z]
-    bias_scale_init = 0.0         # initial multiplier (0 = no bias)
+    # --- Warm-start: per-day OC score bias + degree bonus ---
+    # Use the OC solution's per-day group allocation to create a time-varying
+    # bias that follows OC's temporal strategy (e.g. Z-first then shift).
+    # Also add a degree component: high-degree nodes are generally more
+    # valuable to vaccinate on networks.
+    oc_doses_shares = None        # (T, 3) tensor: per-day group shares
+    bias_scale_init = 0.0
     if doses_seq is not None:
-        avg_shares = doses_seq.sum(axis=0).astype(float)
-        avg_shares = avg_shares / max(avg_shares.sum(), 1e-8)
-        oc_group_bias = torch.tensor(avg_shares, dtype=torch.float32)
+        # normalise each day's doses to shares
+        day_totals = doses_seq.sum(axis=1, keepdims=True).astype(float)
+        day_totals = np.maximum(day_totals, 1.0)
+        shares_per_day = doses_seq.astype(float) / day_totals
+        oc_doses_shares = torch.tensor(shares_per_day, dtype=torch.float32)  # (T, 3)
         bias_scale_init = bias_strength
-        print(f"[node_rl] OC group bias: X={avg_shares[0]:.3f} "
-              f"Y={avg_shares[1]:.3f} Z={avg_shares[2]:.3f}  "
-              f"(init scale={bias_scale_init:.1f}, "
-              f"decay over {bias_decay_episodes} episodes)")
+        avg = shares_per_day.mean(axis=0)
+        print(f"[node_rl] OC per-day bias enabled  "
+              f"(avg: X={avg[0]:.3f} Y={avg[1]:.3f} Z={avg[2]:.3f})  "
+              f"scale={bias_scale_init:.1f}, "
+              f"decay over {bias_decay_episodes} eps)")
 
     optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
     MSE       = torch.nn.MSELoss()
@@ -511,7 +520,7 @@ def run_training_node_rl(
         done = False
 
         # compute decaying bias scale for this episode
-        if oc_group_bias is not None and ep < bias_decay_episodes:
+        if oc_doses_shares is not None and ep < bias_decay_episodes:
             cur_bias_scale = bias_scale_init * (1.0 - ep / bias_decay_episodes)
         else:
             cur_bias_scale = 0.0
@@ -523,6 +532,9 @@ def run_training_node_rl(
 
             if len(s_ids) == 0:
                 _, reward, done, _ = env.step_node_ids([])
+                if done and terminal_reward_scale > 0:
+                    total_deaths = int(np.sum(env.status == D))
+                    reward += -total_deaths * terminal_reward_scale
                 # store a no-op transition
                 buf_g_states.append(g_np)
                 buf_feats.append(None)
@@ -534,12 +546,16 @@ def run_training_node_rl(
 
             f_t = torch.from_numpy(feats).float()
 
-            # build per-node score bias from OC group priorities
-            # node_feats columns 2,3,4 are group one-hot [gX, gY, gZ]
+            # build per-node score bias: OC day-specific group share + degree
+            # node_feats: col 0=degree_norm, cols 2:5=group one-hot [gX,gY,gZ]
             sb = None
-            if cur_bias_scale > 0 and oc_group_bias is not None:
-                group_onehot = f_t[:, 2:5]                    # (n, 3)
-                sb = (group_onehot @ oc_group_bias) * cur_bias_scale  # (n,)
+            if cur_bias_scale > 0 and oc_doses_shares is not None:
+                day_idx = min(env.day, len(oc_doses_shares) - 1)
+                day_bias = oc_doses_shares[day_idx]               # (3,)
+                group_onehot = f_t[:, 2:5]                        # (n, 3)
+                group_score = group_onehot @ day_bias              # (n,)
+                degree_score = f_t[:, 0]                           # (n,) degree_norm
+                sb = (group_score + degree_score) * cur_bias_scale
 
             with torch.no_grad():
                 idxs, log_prob = policy.select(g_state, f_t, capacity_daily,
@@ -548,6 +564,11 @@ def run_training_node_rl(
 
             selected = [s_ids[i] for i in idxs.tolist()]
             _, reward, done, _ = env.step_node_ids(selected)
+
+            # terminal reward: penalise total deaths at episode end
+            if done and terminal_reward_scale > 0:
+                total_deaths = int(np.sum(env.status == D))
+                reward += -total_deaths * terminal_reward_scale
 
             # store numpy / detached — no grad graph retained
             buf_g_states.append(g_np)
