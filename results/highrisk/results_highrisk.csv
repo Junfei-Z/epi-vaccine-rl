@@ -1,0 +1,11 @@
+scenario,method,deaths_mean,deaths_std
+moderate_risk,OC (degree-greedy),94.7,7.0
+moderate_risk,OC (random select),93.4,11.1
+moderate_risk,Group_RL (warm),94.3,5.9
+moderate_risk,Node_RL (cold),91.2,12.2
+moderate_risk,"NodeHorizon (a=3,warm)",94.0,6.1
+extreme_risk,OC (degree-greedy),185.5,6.2
+extreme_risk,OC (random select),192.2,11.9
+extreme_risk,Group_RL (warm),194.0,13.4
+extreme_risk,Node_RL (cold),194.0,10.1
+extreme_risk,"NodeHorizon (a=3,warm)",186.3,13.2
