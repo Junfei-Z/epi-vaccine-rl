@@ -1,0 +1,31 @@
+setting,method,deaths_mean,deaths_std
+beta=0.04,OC_Guided,14.8,4.0
+beta=0.04,Group_RL (cold),14.6,3.2
+beta=0.04,Group_RL (warm),15.0,3.6
+beta=0.04,Node_RL (cold),15.2,4.2
+beta=0.04,"NodeHorizon (a=3,warm)",14.7,4.0
+beta=0.06,OC_Guided,21.5,3.2
+beta=0.06,Group_RL (cold),21.3,5.4
+beta=0.06,Group_RL (warm),21.1,3.4
+beta=0.06,Node_RL (cold),19.8,3.3
+beta=0.06,"NodeHorizon (a=3,warm)",21.4,2.9
+beta=0.08,OC_Guided,25.5,3.7
+beta=0.08,Group_RL (cold),28.6,5.7
+beta=0.08,Group_RL (warm),26.4,6.0
+beta=0.08,Node_RL (cold),31.5,7.0
+beta=0.08,"NodeHorizon (a=3,warm)",24.9,4.9
+beta=0.10,OC_Guided,29.6,4.4
+beta=0.10,Group_RL (cold),31.4,3.7
+beta=0.10,Group_RL (warm),31.8,4.3
+beta=0.10,Node_RL (cold),27.4,4.7
+beta=0.10,"NodeHorizon (a=3,warm)",32.3,6.1
+beta=0.12,OC_Guided,36.0,5.2
+beta=0.12,Group_RL (cold),35.5,5.4
+beta=0.12,Group_RL (warm),34.0,5.1
+beta=0.12,Node_RL (cold),34.8,5.6
+beta=0.12,"NodeHorizon (a=3,warm)",32.5,5.2
+beta=0.15,OC_Guided,36.1,7.2
+beta=0.15,Group_RL (cold),33.8,6.1
+beta=0.15,Group_RL (warm),35.7,4.9
+beta=0.15,Node_RL (cold),36.6,5.9
+beta=0.15,"NodeHorizon (a=3,warm)",35.6,5.3

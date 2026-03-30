@@ -114,7 +114,22 @@ Group RL cold wins. ODE model is so wrong that even group allocation from OC is 
 
 Parameters: N=5000, pY=0.20, dY=0.27, V_MAX=10. Only beta varies.
 
-*(To be filled after beta sweep completes)*
+| beta | OC_Guided | Group_RL (cold) | Group_RL (warm) | Node_RL (cold) | NodeHorizon |
+|------|-----------|-----------------|-----------------|----------------|-------------|
+| 0.04 | 14.8 ± 4.0 | 14.6 ± 3.2 | 15.0 ± 3.6 | 15.2 ± 4.2 | 14.7 ± 4.0 |
+| 0.06 | 21.5 ± 3.2 | 21.3 ± 5.4 | 21.1 ± 3.4 | **19.8 ± 3.3** | 21.4 ± 2.9 |
+| 0.08 | **25.5 ± 3.7** | 28.6 ± 5.7 | 26.4 ± 6.0 | 31.5 ± 7.0 | 24.9 ± 4.9 |
+| 0.10 | 29.6 ± 4.4 | 31.4 ± 3.7 | 31.8 ± 4.3 | **27.4 ± 4.7** | 32.3 ± 6.1 |
+| 0.12 | 36.0 ± 5.2 | 35.5 ± 5.4 | 34.0 ± 5.1 | 34.8 ± 5.6 | **32.5 ± 5.2** |
+| 0.15 | 36.1 ± 7.2 | **33.8 ± 6.1** | 35.7 ± 4.9 | 36.6 ± 5.9 | 35.6 ± 5.3 |
+
+### Analysis
+
+Unlike the severity sweep, the beta sweep does **not show a clear systematic trend**. Different methods win at different beta values without a consistent pattern. This is primarily due to **training variance** — Node RL's performance fluctuates significantly across runs (e.g., 19.8 at beta=0.06 but 31.5 at beta=0.08).
+
+The only notable observation: at beta=0.15 (highest), Group RL cold wins (33.8), consistent with the severity sweep finding that cold-start exploration outperforms OC-anchored methods when model mismatch is large.
+
+**Conclusion**: Beta (transmissibility) does not create a clear advantage for any particular method. The severity (mortality) dimension provides a much cleaner and more interpretable story about when RL methods surpass OC.
 
 ## Key Insight: Winner Depends on Model Mismatch Level
 

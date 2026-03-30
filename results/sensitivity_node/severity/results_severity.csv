@@ -1,0 +1,21 @@
+setting,method,deaths_mean,deaths_std
+pY=0.2_dY=0.27_baseline,OC_Guided,25.5,3.7
+pY=0.2_dY=0.27_baseline,Group_RL (cold),28.5,4.7
+pY=0.2_dY=0.27_baseline,Group_RL (warm),27.1,6.3
+pY=0.2_dY=0.27_baseline,Node_RL (cold),29.5,4.8
+pY=0.2_dY=0.27_baseline,"NodeHorizon (a=3,warm)",25.9,3.7
+pY=0.3_dY=0.4_moderate,OC_Guided,60.5,6.5
+pY=0.3_dY=0.4_moderate,Group_RL (cold),58.1,6.1
+pY=0.3_dY=0.4_moderate,Group_RL (warm),59.6,9.3
+pY=0.3_dY=0.4_moderate,Node_RL (cold),56.7,8.3
+pY=0.3_dY=0.4_moderate,"NodeHorizon (a=3,warm)",63.2,7.5
+pY=0.4_dY=0.5_severe,OC_Guided,91.2,7.3
+pY=0.4_dY=0.5_severe,Group_RL (cold),97.3,5.3
+pY=0.4_dY=0.5_severe,Group_RL (warm),95.7,8.3
+pY=0.4_dY=0.5_severe,Node_RL (cold),101.5,8.8
+pY=0.4_dY=0.5_severe,"NodeHorizon (a=3,warm)",89.7,7.8
+pY=0.5_dY=0.65_critical,OC_Guided,149.4,7.0
+pY=0.5_dY=0.65_critical,Group_RL (cold),142.5,10.8
+pY=0.5_dY=0.65_critical,Group_RL (warm),149.5,7.9
+pY=0.5_dY=0.65_critical,Node_RL (cold),152.0,8.6
+pY=0.5_dY=0.65_critical,"NodeHorizon (a=3,warm)",148.8,6.6
