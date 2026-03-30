@@ -294,10 +294,11 @@ class EpidemicNodeEnv:
 
     def obs_with_pressure(self) -> np.ndarray:
         """
-        Extended observation: 31-dim base obs + 3 pressure features = 34-dim.
-        Used by the NodeScoringPolicy as the global state.
+        Global observation: 31-dim base obs (group compartment counts + time).
+        Pressure features removed — per-node features already carry individual
+        infection pressure, making group-level pressure redundant.
         """
-        return np.concatenate([self._obs(), self._infection_pressure()])
+        return self._obs()
 
     def node_features(self) -> tuple:
         """

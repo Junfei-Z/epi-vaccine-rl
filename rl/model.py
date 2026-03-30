@@ -35,21 +35,20 @@ class NodeScoringPolicy(nn.Module):
     Each node's input is a concatenation of:
       - Local node features  (6-dim): degree, infectious-neighbour fraction,
                                       group one-hot (3), normalised day
-      - Global epidemic state (34-dim): 30 compartment fractions + day/T
-                                        + 3 pressure features
-    Total input dim: 40
+      - Global epidemic state (31-dim): 30 compartment fractions + day/T
+    Total input dim: 37
 
-    The critic takes only the 34-dim global state (shared across all nodes).
+    The critic takes only the 31-dim global state (shared across all nodes).
 
     Parameters
     ----------
-    global_dim   : dimension of global state vector (default 34)
+    global_dim   : dimension of global state vector (default 31)
     node_feat_dim: dimension of per-node feature vector (default 6)
     hidden       : hidden layer width
     """
 
     NODE_FEAT_DIM  = 6    # degree_norm, inf_nbr_frac, gX, gY, gZ, day_norm
-    GLOBAL_DIM     = 34   # 30 compartment fracs + day/T + 3 pressure features
+    GLOBAL_DIM     = 31   # 30 compartment fracs + day/T
 
     def __init__(self, hidden: int = 64):
         super().__init__()
