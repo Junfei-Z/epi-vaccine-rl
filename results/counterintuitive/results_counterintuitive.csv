@@ -1,0 +1,21 @@
+setting,method,deaths_mean,deaths_std,vax_X,vax_Y,vax_Z
+baseline,OC_Guided,25.5,3.7,276.3,323.7,0.0
+baseline,Group_RL (cold),26.9,4.4,298.2,253.0,48.8
+baseline,Group_RL (warm),28.5,4.2,325.4,232.7,41.9
+baseline,Node_RL (cold),28.3,4.1,547.2,0.0,52.8
+baseline,"NodeHorizon (a=3,warm)",26.0,2.8,262.7,323.6,13.7
+high_wA,OC_Guided,26.2,4.1,299.4,300.6,0.0
+high_wA,Group_RL (cold),28.6,3.0,331.8,219.3,48.9
+high_wA,Group_RL (warm),30.5,5.2,347.4,211.2,41.4
+high_wA,Node_RL (cold),28.6,5.7,485.7,114.3,0.0
+high_wA,"NodeHorizon (a=3,warm)",25.1,4.9,290.4,309.6,0.0
+long_asymp,OC_Guided,26.3,3.6,307.0,293.0,0.0
+long_asymp,Group_RL (cold),28.7,2.5,317.5,227.6,54.9
+long_asymp,Group_RL (warm),29.3,4.6,329.8,223.5,46.7
+long_asymp,Node_RL (cold),28.7,5.6,264.0,248.4,87.6
+long_asymp,"NodeHorizon (a=3,warm)",24.8,3.9,288.0,312.0,0.0
+counterintuitive,OC_Guided,31.3,5.8,312.7,265.3,0.0
+counterintuitive,Group_RL (cold),33.4,5.6,382.0,170.5,41.6
+counterintuitive,Group_RL (warm),33.1,5.4,348.6,197.8,42.4
+counterintuitive,Node_RL (cold),32.2,4.4,299.1,269.4,16.4
+counterintuitive,"NodeHorizon (a=3,warm)",31.0,7.0,294.9,288.6,4.3
