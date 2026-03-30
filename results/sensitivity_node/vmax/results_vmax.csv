@@ -1,0 +1,26 @@
+setting,method,deaths_mean,deaths_std
+V_MAX=5,OC_Guided,27.6,3.6
+V_MAX=5,Group_RL (cold),28.7,5.4
+V_MAX=5,Group_RL (warm),27.3,5.8
+V_MAX=5,Node_RL (cold),25.8,6.4
+V_MAX=5,"NodeHorizon (a=3,warm)",27.6,4.2
+V_MAX=10,OC_Guided,25.5,3.7
+V_MAX=10,Group_RL (cold),27.9,3.4
+V_MAX=10,Group_RL (warm),27.1,5.4
+V_MAX=10,Node_RL (cold),26.9,7.8
+V_MAX=10,"NodeHorizon (a=3,warm)",25.9,3.7
+V_MAX=20,OC_Guided,22.4,5.4
+V_MAX=20,Group_RL (cold),26.2,5.3
+V_MAX=20,Group_RL (warm),29.9,3.3
+V_MAX=20,Node_RL (cold),25.5,6.3
+V_MAX=20,"NodeHorizon (a=3,warm)",23.3,5.0
+V_MAX=40,OC_Guided,22.4,6.9
+V_MAX=40,Group_RL (cold),26.1,5.8
+V_MAX=40,Group_RL (warm),26.0,4.1
+V_MAX=40,Node_RL (cold),27.3,5.8
+V_MAX=40,"NodeHorizon (a=3,warm)",21.9,4.1
+V_MAX=60,OC_Guided,20.4,3.8
+V_MAX=60,Group_RL (cold),23.7,4.1
+V_MAX=60,Group_RL (warm),25.4,3.9
+V_MAX=60,Node_RL (cold),19.7,5.5
+V_MAX=60,"NodeHorizon (a=3,warm)",21.0,4.0
