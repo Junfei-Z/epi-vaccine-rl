@@ -1,0 +1,21 @@
+setting,method,deaths_mean,deaths_std
+net=BA,OC_Guided,25.5,3.7
+net=BA,Group_RL (cold),30.8,6.2
+net=BA,Group_RL (warm),27.9,4.1
+net=BA,Node_RL (cold),27.8,2.9
+net=BA,"NodeHorizon (a=3,warm)",26.5,4.3
+net=ER,OC_Guided,20.0,4.3
+net=ER,Group_RL (cold),23.4,3.1
+net=ER,Group_RL (warm),25.7,4.1
+net=ER,Node_RL (cold),23.2,3.2
+net=ER,"NodeHorizon (a=3,warm)",21.8,4.2
+net=WS,OC_Guided,22.7,3.3
+net=WS,Group_RL (cold),25.9,5.5
+net=WS,Group_RL (warm),24.9,6.1
+net=WS,Node_RL (cold),24.5,5.5
+net=WS,"NodeHorizon (a=3,warm)",22.4,2.3
+net=Regular,OC_Guided,22.9,5.5
+net=Regular,Group_RL (cold),28.3,6.0
+net=Regular,Group_RL (warm),26.9,3.8
+net=Regular,Node_RL (cold),26.4,5.0
+net=Regular,"NodeHorizon (a=3,warm)",24.7,4.8
