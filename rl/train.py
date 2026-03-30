@@ -546,16 +546,17 @@ def run_training_node_rl(
 
             f_t = torch.from_numpy(feats).float()
 
-            # build per-node score bias: OC day-specific group share + degree
-            # node_feats: col 0=degree_norm, cols 2:5=group one-hot [gX,gY,gZ]
+            # build per-node score bias: OC day-specific group share ONLY
+            # No degree component — degree bias pushes toward degree-greedy
+            # which is suboptimal in high-mortality scenarios.
+            # node_feats: cols 2:5=group one-hot [gX,gY,gZ]
             sb = None
             if cur_bias_scale > 0 and oc_doses_shares is not None:
                 day_idx = min(env.day, len(oc_doses_shares) - 1)
                 day_bias = oc_doses_shares[day_idx]               # (3,)
                 group_onehot = f_t[:, 2:5]                        # (n, 3)
                 group_score = group_onehot @ day_bias              # (n,)
-                degree_score = f_t[:, 0]                           # (n,) degree_norm
-                sb = (group_score + degree_score) * cur_bias_scale
+                sb = group_score * cur_bias_scale
 
             with torch.no_grad():
                 idxs, log_prob = policy.select(g_state, f_t, capacity_daily,
