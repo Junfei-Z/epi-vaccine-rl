@@ -1,0 +1,21 @@
+setting,method,deaths_mean,deaths_std
+baseline,OC_Guided,25.5,3.7
+baseline,Group_RL (cold),28.5,4.7
+baseline,Group_RL (warm),27.1,6.3
+baseline,Node_RL (cold),24.6,6.1
+baseline,"NodeHorizon (a=3,warm)",26.2,3.9
+moderate,OC_Guided,60.5,6.5
+moderate,Group_RL (cold),58.1,6.1
+moderate,Group_RL (warm),59.6,9.3
+moderate,Node_RL (cold),53.4,5.6
+moderate,"NodeHorizon (a=3,warm)",63.2,7.5
+severe,OC_Guided,91.2,7.3
+severe,Group_RL (cold),97.3,5.3
+severe,Group_RL (warm),95.7,8.3
+severe,Node_RL (cold),89.3,6.3
+severe,"NodeHorizon (a=3,warm)",94.8,10.0
+critical,OC_Guided,149.4,7.0
+critical,Group_RL (cold),142.5,10.8
+critical,Group_RL (warm),149.5,7.9
+critical,Node_RL (cold),148.8,6.6
+critical,"NodeHorizon (a=3,warm)",148.8,6.6
