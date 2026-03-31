@@ -1,0 +1,9 @@
+scenario,warm_start,terminal_reward,method,deaths_mean,deaths_std
+baseline,False,False,cold_no_terminal,29.3,4.4
+baseline,True,False,warm_no_terminal,27.2,5.7
+baseline,False,True,cold_terminal,27.6,2.9
+baseline,True,True,warm_terminal,24.9,4.1
+long_asymp,False,False,cold_no_terminal,26.5,6.9
+long_asymp,True,False,warm_no_terminal,28.9,5.6
+long_asymp,False,True,cold_terminal,28.2,3.4
+long_asymp,True,True,warm_terminal,28.0,3.9
