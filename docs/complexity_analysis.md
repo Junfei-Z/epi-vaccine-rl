@@ -73,9 +73,9 @@ This is **exponential** in $N_s$, making naive individual RL fundamentally intra
 
 ---
 
-## Method 2: Node RL with Scoring + Gumbel-Top-K (Ours)
+## Method 2: Node RL with Scoring + Top-K (Ours)
 
-Instead of outputting a combinatorial action, our method scores each susceptible node independently and selects the top-$K$ via differentiable Gumbel-Top-K sampling.
+Instead of outputting a combinatorial action, our method scores each susceptible node independently with a shared MLP and selects the top-$K$ by score.
 
 ### Action Representation
 
@@ -83,9 +83,9 @@ The policy outputs a **scalar score** $\phi_\theta(x_i, g) \in \mathbb{R}$ for e
 - $x_i \in \mathbb{R}^d$ is the per-node feature (6-dim)
 - $g \in \mathbb{R}^{d_g}$ is the global state (31-dim)
 
-The action is the set of $K$ nodes with the highest (perturbed) scores:
+The action is the set of $K$ nodes with the highest scores:
 
-$$\mathcal{V}_t = \text{Top-}K\left(\phi_\theta(x_i, g) + G_i\right), \quad G_i \sim \text{Gumbel}(0, 1)$$
+$$\mathcal{V}_t = \text{Top-}K\left(\phi_\theta(x_i, g)\right)$$
 
 ### Per-Step Complexity Breakdown
 
@@ -94,7 +94,7 @@ $$\mathcal{V}_t = \text{Top-}K\left(\phi_\theta(x_i, g) + G_i\right), \quad G_i 
 | **1. Feature construction** | Sparse adjacency multiply for neighbor infection pressure | $O(N + |E|)$ |
 | **2. Global observation** | Count compartments per group | $O(N)$ |
 | **3. Scoring network** | Shared MLP: $(d + d_g) \to H \to H \to 1$ applied to $N_s$ nodes | $O(N_s \cdot H \cdot (d + d_g))$ |
-| **4. Gumbel-Top-K selection** | Sample Gumbel noise + `torch.topk` | $O(N_s \log K)$ |
+| **4. Top-K selection** | `torch.topk` on scores | $O(N_s \log K)$ |
 | **5. Log-probability** | `log_softmax` over $N_s$ scores + index $K$ entries | $O(N_s)$ |
 | **Total per step** | | $O(N + |E| + N_s \cdot H \cdot (d+d_g))$ |
 
@@ -122,14 +122,14 @@ With $K_{\text{epochs}} = 8$:
 
 $$\text{Per update} = O(K_{\text{epochs}} \cdot T \cdot N_s \cdot H \cdot (d + d_g)) = O(T \cdot N_s)$$
 
-### Why Gumbel-Top-K is Key
+### Why Scoring + Top-K Works
 
-The Gumbel-Top-K trick provides:
+The scoring + Top-K design provides:
 
 1. **Exact budget satisfaction**: Always selects exactly $K$ nodes — no projection needed
-2. **Differentiable sampling**: Log-probability $\log \pi(a \mid s) = \sum_{j \in \mathcal{V}_t} \log \text{softmax}(\phi_j)$ has well-defined gradients
-3. **Low variance**: Single scalar score per node → gradient variance is $O(1)$ w.r.t. $N_s$ (vs $O(N_s)$ for independent Bernoulli)
-4. **Permutation equivariance**: Shared scorer treats nodes symmetrically, enabling generalization
+2. **Well-defined gradients**: Log-probability $\log \pi(a \mid s) = \sum_{j \in \mathcal{V}_t} \log \text{softmax}(\phi_j)$ is differentiable through the scorer, enabling standard PPO updates
+3. **Low variance**: Single scalar score per node → gradient variance is $O(1)$ w.r.t. $N_s$ (vs $O(N_s)$ for independent Bernoulli), because the gradient flows through a shared softmax rather than $N_s$ independent distributions
+4. **Permutation equivariance**: Shared scorer treats nodes symmetrically, enabling generalization across population sizes
 
 ---
 
