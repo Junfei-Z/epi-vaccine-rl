@@ -183,6 +183,7 @@ def run_training(
     dt: float = 1.0,
     label: str = None,
     out_dir: str = '.',
+    terminal_reward_scale: float = 0.0,
 ) -> tuple:
     """
     Run a full warm-start or cold-start PPO training loop.
@@ -221,6 +222,9 @@ def run_training(
     substeps, dt        : env disease-progression sub-stepping
     label               : if given, save best policy to '{out_dir}/best_policy_{label}.pt'
     out_dir             : directory for saved model files
+    terminal_reward_scale : at episode end, add -total_deaths * scale to reward
+                            (0 = off). Aligns RL objective with global D(T)
+                            minimisation rather than per-step myopic deaths.
 
     Returns
     -------
@@ -303,6 +307,12 @@ def run_training(
                 )
 
             next_state, reward, done, _ = env.step(action_tensor.numpy())
+
+            # terminal reward: penalise total deaths at episode end
+            if done and terminal_reward_scale > 0:
+                total_deaths = int(np.sum(env.status == D))
+                reward += -total_deaths * terminal_reward_scale
+
             buffer.states.append(s_t)
             buffer.actions.append(action_tensor)
             buffer.log_probs.append(log_prob)
