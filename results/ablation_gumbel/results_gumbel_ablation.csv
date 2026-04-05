@@ -1,0 +1,7 @@
+scenario,method,deaths_mean,deaths_std
+baseline,OC-Guided,25.5,3.7
+baseline,Node RL (Gumbel-Top-K),29.0,4.3
+baseline,Node RL (Greedy Top-K),26.1,4.0
+moderate,OC-Guided,35.3,6.8
+moderate,Node RL (Gumbel-Top-K),43.4,6.2
+moderate,Node RL (Greedy Top-K),38.6,6.8

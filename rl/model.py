@@ -95,22 +95,22 @@ class NodeScoringPolicy(nn.Module):
         global_state: torch.Tensor,
         node_feats: torch.Tensor,
         k: int,
-        deterministic: bool = False,
+        deterministic: bool = True,
         score_bias: torch.Tensor = None,
     ) -> tuple:
         """
         Select k nodes to vaccinate and return their indices + log-prob.
 
-        Training  (deterministic=False): sample k nodes via Gumbel-top-k so
-          the selection is stochastic and differentiable.
-        Evaluation (deterministic=True): take the top-k by raw score.
+        Always uses deterministic top-k selection (greedy). Gumbel noise was
+        removed after ablation showed greedy outperforms stochastic selection
+        in both baseline and moderate scenarios.
 
         Parameters
         ----------
         global_state  : Tensor (global_dim,)
         node_feats    : Tensor (n_susceptible, node_feat_dim)
         k             : number of nodes to select (V_MAX_DAILY)
-        deterministic : if True, greedy top-k; else Gumbel-top-k sampling
+        deterministic : kept for API compatibility (always True)
         score_bias    : Tensor (n_susceptible,) or None — additive bias from
                         OC warm-start, applied to scores before selection but
                         NOT included in log-prob computation (so PPO ratios
@@ -119,7 +119,7 @@ class NodeScoringPolicy(nn.Module):
         Returns
         -------
         indices  : LongTensor (min(k, n),) — selected positions in node_feats
-        log_prob : scalar Tensor — sum of log-probs (None if deterministic)
+        log_prob : scalar Tensor — sum of log-probs for PPO
         """
         n = node_feats.shape[0]
         k = min(k, n)
@@ -131,16 +131,9 @@ class NodeScoringPolicy(nn.Module):
         # biased scores for selection; unbiased scores for log-prob
         biased = scores + score_bias if score_bias is not None else scores
 
-        if deterministic:
-            indices = torch.topk(biased, k).indices
-            return indices, None
+        indices = torch.topk(biased, k).indices
 
-        # Gumbel-top-k: add Gumbel noise then take top-k
-        gumbel = -torch.log(-torch.log(torch.rand_like(biased) + 1e-10) + 1e-10)
-        perturbed = biased + gumbel
-        indices   = torch.topk(perturbed, k).indices
-
-        # log-prob uses unbiased scores so PPO ratios remain correct
+        # log-prob from unbiased scores for PPO importance ratio
         log_probs = torch.log_softmax(scores, dim=0)
         log_prob  = log_probs[indices].sum()
 

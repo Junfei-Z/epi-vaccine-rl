@@ -559,7 +559,6 @@ def run_training_node_rl(
 
             with torch.no_grad():
                 idxs, log_prob = policy.select(g_state, f_t, capacity_daily,
-                                               deterministic=False,
                                                score_bias=sb)
 
             selected = [s_ids[i] for i in idxs.tolist()]
@@ -574,7 +573,7 @@ def run_training_node_rl(
             buf_g_states.append(g_np)
             buf_feats.append(feats)                           # numpy
             buf_sel_idxs.append(idxs.detach())
-            buf_old_logp.append(float(log_prob.item()) if log_prob is not None else 0.0)
+            buf_old_logp.append(float(log_prob.item()))
             buf_rewards.append(reward)
             buf_dones.append(float(done))
 
