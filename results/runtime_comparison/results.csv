@@ -1,0 +1,4 @@
+method,deaths_mean,deaths_std,runtime_sec,episodes,N,K
+OC-Guided,54.0,8.3,12.1,-,10000,20
+Node RL,52.4,6.6,572.4,1000,10000,20
+Naive RL,56.3,8.7,617.2,1000,10000,20

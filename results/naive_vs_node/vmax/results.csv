@@ -1,0 +1,16 @@
+setting,method,deaths_mean,deaths_std,runtime_sec,gamma
+vmax_5,OC-Guided,27.6,3.6,7.6,-
+vmax_5,Node RL,26.5,2.2,117.5,0.99
+vmax_5,Naive RL,28.5,4.2,128.1,0.99
+vmax_10,OC-Guided,25.5,3.7,8.3,-
+vmax_10,Node RL,27.2,5.7,115.1,0.99
+vmax_10,Naive RL,27.2,5.7,126.0,0.99
+vmax_20,OC-Guided,22.4,5.4,15.6,-
+vmax_20,Node RL,21.1,5.6,107.1,0.99
+vmax_20,Naive RL,28.5,4.0,117.9,0.99
+vmax_40,OC-Guided,22.4,6.9,10.6,-
+vmax_40,Node RL,21.6,5.9,90.5,0.99
+vmax_40,Naive RL,28.3,5.2,98.0,0.99
+vmax_60,OC-Guided,20.4,3.8,13.7,-
+vmax_60,Node RL,22.4,2.4,81.9,0.99
+vmax_60,Naive RL,25.2,4.3,88.6,0.99

@@ -1,0 +1,13 @@
+setting,method,deaths_mean,deaths_std,runtime_sec,gamma
+severity_baseline,OC-Guided,25.5,3.7,8.1,-
+severity_baseline,Node RL,23.8,5.2,116.0,0.99
+severity_baseline,Naive RL,27.2,5.7,126.2,0.99
+severity_moderate,OC-Guided,60.5,6.5,8.3,-
+severity_moderate,Node RL,61.2,5.2,115.4,0.99
+severity_moderate,Naive RL,62.5,6.9,126.3,0.99
+severity_severe,OC-Guided,91.2,7.3,8.4,-
+severity_severe,Node RL,91.1,9.1,115.2,0.99
+severity_severe,Naive RL,97.7,8.2,126.0,0.99
+severity_critical,OC-Guided,149.4,7.0,8.5,-
+severity_critical,Node RL,146.5,10.1,115.3,0.99
+severity_critical,Naive RL,155.7,8.4,126.6,0.99

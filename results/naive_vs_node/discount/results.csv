@@ -1,0 +1,16 @@
+setting,method,deaths_mean,deaths_std,runtime_sec,gamma
+gamma_0.80,OC-Guided,25.5,3.7,8.2,-
+gamma_0.80,Node RL,28.4,3.6,115.7,0.8
+gamma_0.80,Naive RL,27.2,5.7,126.2,0.8
+gamma_0.90,OC-Guided,25.5,3.7,8.3,-
+gamma_0.90,Node RL,27.2,5.7,115.1,0.9
+gamma_0.90,Naive RL,27.2,5.7,126.4,0.9
+gamma_0.95,OC-Guided,25.5,3.7,8.3,-
+gamma_0.95,Node RL,24.1,4.0,115.3,0.95
+gamma_0.95,Naive RL,27.2,5.7,126.4,0.95
+gamma_0.99,OC-Guided,25.5,3.7,8.2,-
+gamma_0.99,Node RL,25.4,4.8,115.3,0.99
+gamma_0.99,Naive RL,27.2,5.7,126.3,0.99
+gamma_1.00,OC-Guided,25.5,3.7,8.2,-
+gamma_1.00,Node RL,22.6,3.5,115.0,1.0
+gamma_1.00,Naive RL,27.2,5.7,126.4,1.0
